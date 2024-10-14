@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Convertisseur Calories</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        label, input {
+            margin-bottom: 10px;
+        }
+        #result {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Convertisseur d'Aliment en Concombre et Nutella</h1>
+    
+    <label for="calories">Entrez la valeur en kcal / 100g de l'aliment :</label><br>
+    <input type="number" id="calories" placeholder="Ex : 200 kcal (Chocolat noir à environ 70% de cacao)" /><br>
+
+    <button onclick="convert()">Convertir</button>
+
+    <div id="result"></div>
+
+    <script>
+        function convert() {
+            // Récupérer la valeur entrée
+            let kcalPer100g = document.getElementById("calories").value;
+
+            // Calories des aliments de référence
+            const kcalConcombre = 35; // kcal/100g pour le concombre
+            const kcalNutella = 539; // kcal/100g pour le Nutella
+
+            if (kcalPer100g > 0) {
+                // Calcul du poids en grammes nécessaire pour atteindre les mêmes calories
+                let gConcombre = (kcalPer100g / kcalConcombre * 100).toFixed(2); // grammes de concombre
+                let gNutella = (kcalPer100g / kcalNutella * 100).toFixed(2); // grammes de Nutella
+
+                // Affichage du résultat
+                document.getElementById("result").innerHTML = `
+                    <p>Pour ${kcalPer100g} kcal / 100g :</p>
+                    <ul>
+                        <li>Équivalent en concombre : ${gConcombre} g</li>
+                        <li>Équivalent en Nutella : ${gNutella} g</li>
+                    </ul>
+                `;
+            } else {
+                document.getElementById("result").innerHTML = `<p>Veuillez entrer une valeur valide.</p>`;
+            }
+        }
+    </script>
+
+</body>
+</html>

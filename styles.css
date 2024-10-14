@@ -1,0 +1,675 @@
+/* Importation de la police 'Creepster' */
+@import url('https://fonts.googleapis.com/css2?family=Creepster&display=swap');
+
+
+/* Simple CSS pour styliser l'interface */
+body {
+    font-family: 'Roboto', sans-serif;
+    background-image: url('img/background2.png');
+    background-size: cover; /* S'assure que l'image couvre toute la fenêtre */
+    background-position: center center; /* Centre l'image */
+    background-repeat: no-repeat; /* Évite la répétition de l'image */
+    background-attachment: fixed; /* Garde l'image fixe même lors du scroll */
+}
+
+.navbar {
+    z-index: 1000; /* Assurez que le menu est toujours visible */
+}
+
+.navbar-text {
+    font-size: 16px;
+    color: #000; /* Couleur du texte */
+}
+
+#login {
+    display: block;
+    background-color: rgba(255, 255, 255, 0.8); /* Fond blanc semi-transparent */
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Ajoute une légère ombre */
+    max-width: 400px;
+    margin: 25% auto !important; /* Centre le formulaire */
+}
+
+#availableUser {
+    background-color: rgba(255, 255, 255, 0.9); /* Fond blanc semi-transparent */
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    max-width: 400px;
+    margin: auto; /* Centre horizontalement */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%); /* Centre verticalement */
+    max-height: 80vh; /* Limite la hauteur à 80% de la hauteur de la fenêtre */
+    overflow-y: auto; /* Ajoute le scroll vertical */
+}
+
+#invitation {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0.9); /* Fond blanc légèrement transparent */
+    border-radius: 20px 20px 0 0; /* Arrondir seulement les coins supérieurs */
+    padding: 20px;
+    box-shadow: 0 -4px 8px rgba(0, 0, 0, 0.1); /* Ombre légère sur le haut */
+    z-index: 1000; /* Assurez-vous que la div est au-dessus des autres éléments */
+    margin-bottom: 0px !important;
+}
+
+#game, #invitation {
+    display: none;
+}
+#players {
+    list-style-type: none;
+    font-size: 14px;
+}
+#players li {
+    padding: 10px;
+    /*background-color: rgba(255, 255, 255, 0.8);*/
+    border-radius: 5px;
+    margin-bottom: 5px;
+    transition: background-color 0.3s ease, transform 0.3s ease;
+    cursor: pointer; /* Utilise une icône personnalisée pour le curseur */
+}
+
+#players li:hover {
+    background-color: rgba(173, 216, 230, 0.8); /* Met en surbrillance avec une couleur légèrement bleutée */
+    transform: scale(1.05); /* Agrandit légèrement l'élément pour attirer l'attention */
+    cursor: pointer; /* Change l'icône du curseur sur survol */
+}
+
+#welcomeMessage, #logoutLink {
+    display: none; /* Masquer par défaut */
+}
+
+.mine-number-1 {
+    color: blue;
+}
+
+.mine-number-2 {
+    color: green;
+}
+
+.mine-number-3 {
+    color: red;
+}
+
+.mine-number-4 {
+    color: purple;
+}
+
+.mine-number-5 {
+    color: brown;
+}
+
+.mine-number-6 {
+    color: rgb(255, 0, 191);
+}
+
+.mine-number-7 {
+    color: black;
+}
+
+.mine-number-8 {
+    color: gray;
+}
+
+.flag-player-1 {
+    color: red; /* Couleur du drapeau pour le joueur 1 */
+}
+
+.flag-player-2 {
+    color: blue; /* Couleur du drapeau pour le joueur 2 */
+}
+
+.cell-flagged .cell-front {
+    animation: flagPlace 0.3s ease-in-out;
+    font-size: 18px;
+}
+
+@keyframes flagPlace {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.2);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+
+table {
+    border-collapse: collapse;
+}
+td {
+    min-width: 20px;
+    min-height: 20px;
+    width: 20px;
+    height: 20px;
+    text-align: center;
+    border: 1px solid #000;
+    cursor: pointer;
+    margin: 0px 0px 0px 0px;
+    font-size: 12px;
+}
+table th {
+    
+    background-color: rgba(255, 255, 255, 0.9);
+}
+table td:hover {
+    background-color: rgba(173, 216, 230, 0.8); /* Surbrillance des lignes du tableau */
+}
+td.flag {
+    background-color: white;
+}
+td.revealed {
+    background-color: lightgray;
+    font-weight: 700;
+
+}
+#messages {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    background-color: #f1f1f1;
+    padding: 10px;
+    max-height: 150px;
+    overflow-y: scroll;
+    font-size: 12px;
+}
+#gameContainer {
+    display: none;
+    justify-content: center; /* Centre horizontalement */
+    align-items: center; /* Centre verticalement */
+    min-height: 100vh; /* Utilise toute la hauteur de la fenêtre */
+    flex-direction: column; /* Dispose les éléments en colonne par défaut */
+    margin: 0 auto;
+}
+#gameBoard {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 100%;
+    max-height: 100%;
+    
+}
+#plateau {
+    display: none;
+}
+#plateau {
+    background-color: rgba(255, 255, 255, 0.9); /* Fond blanc semi-transparent */
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Ombre légère pour le relief */
+    margin: 20px auto; /* Centre horizontalement */
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centre les éléments à l'intérieur */
+    max-width: 90%; /* Limite la largeur maximale du cadre */
+    max-height: 80vh; /* Limite la hauteur maximale du cadre à 80% de la hauteur de la fenêtre */
+    overflow: auto; /* Active les barres de défilement si nécessaire */
+}
+#currentTurnDisplay {
+    background-color: rgba(255, 255, 255, 0.9); /* Fond blanc semi-transparent */
+    padding: 10px 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Ombre légère pour le relief */
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    max-width: 300px;
+    text-align: center;
+}
+#winnerModal {
+    display: none;
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    justify-content: center;
+    align-items: center;
+}
+#winnerModalContent {
+    background-color: rgba(255, 255, 255, 0.5);
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+}
+
+/* Overlay d'Aide */
+.help-overlay {
+    display: none; /* Masqué par défaut */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8); /* Fond semi-transparent */
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.help-overlay.show {
+    display: flex;
+    opacity: 1;
+}
+
+.help-content {
+    background-color: #fff;
+    padding: 20px;
+    width: 80%;
+    max-width: 600px;
+    border-radius: 5px;
+    text-align: left;
+}
+
+.help-content h2 {
+    margin-top: 0;
+}
+.hidden {
+    display: none;
+}
+/* Icône du Point d'Interrogation */
+.help-icon {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    font-size: 48px; /* Ajustez la taille selon vos préférences */
+    cursor: pointer;
+    z-index: 1001;
+    user-select: none; /* Empêche la sélection du texte */
+}
+/* Styles pour les icônes */
+.icon {
+    width: 24px;
+    height: 24px;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+.icon-inline {
+    width: 16px;
+    height: 16px;
+    vertical-align: text-bottom;
+    margin: 0 4px;
+}
+
+/* Styles pour le titre */
+.help-content h2 {
+    
+}
+
+/* Styles pour le contenu de l'aide */
+.help-content {
+    color: #333;
+}
+
+.help-content ul {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+.help-content li {
+    margin-bottom: 15px;
+}
+
+.help-content p {
+    font-size: 1.1em;
+}
+
+.connection-error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    padding: 20px;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 400px;
+    color: #721c24;
+}
+
+.connection-error h2 {
+    font-size: 2rem;
+    margin-bottom: 10px;
+}
+
+.connection-error p {
+    font-size: 1.2rem;
+    margin: 10px 0;
+}
+
+/* Pour centrer le conteneur au centre de la page */
+.container.vh-100 {
+    height: 100vh;
+}
+
+.roboto-light {
+    font-family: "Roboto", sans-serif;
+    font-weight: 300;
+    font-style: normal;
+  }
+  
+  .roboto-regular {
+    font-family: "Roboto", sans-serif;
+    font-weight: 400;
+    font-style: normal;
+  }
+  
+  .roboto-medium {
+    font-family: "Roboto", sans-serif;
+    font-weight: 500;
+    font-style: normal;
+  }
+  
+  .roboto-black {
+    font-family: "Roboto", sans-serif;
+    font-weight: 900;
+    font-style: normal;
+  }
+  
+  .roboto-light-italic {
+    font-family: "Roboto", sans-serif;
+    font-weight: 300;
+    font-style: italic;
+  }
+  
+  .roboto-regular-italic {
+    font-family: "Roboto", sans-serif;
+    font-weight: 400;
+    font-style: italic;
+  }
+  
+  .roboto-medium-italic {
+    font-family: "Roboto", sans-serif;
+    font-weight: 500;
+    font-style: italic;
+  }
+
+.popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 18px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.5s ease-in-out, visibility 0.5s ease-in-out;
+    z-index: 1000;
+}
+
+.popup.show {
+    opacity: 1;
+    visibility: visible;
+} 
+
+
+#scoresContainer {
+    background-color: rgba(255, 255, 255, 0.9); /* Fond blanc semi-transparent */
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+    margin: 5% auto;
+    max-width: 80%; /* Limite la largeur */
+}
+
+#scoresTableContainer {
+    margin-top: 20px;
+    width: 100%;
+}
+
+/* Couleurs Bootstrap et autres personnalisations */
+table.table {
+    background-color: rgba(255, 255, 255, 0.9); /* Fond du tableau */
+}
+
+thead.thead-dark th {
+    background-color: #343a40; /* Couleur de l'en-tête */
+    color: white;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(173, 216, 230, 0.6); /* Couleur au survol */
+}
+
+/* Couleurs pour les cellules */
+table.table td {
+    color: #333;
+    font-size: 1.1em; /* Taille de police légèrement augmentée */
+}
+
+table.table td:first-child {
+    font-weight: bold;
+    color: #007bff; /* Couleur différente pour le nom du joueur */
+}
+
+/* Bordures pour un effet propre et défini */
+table.table {
+    border: 2px solid #dee2e6;
+}
+
+table.table th, table.table td {
+    border: 1px solid #dee2e6;
+}
+
+ /*Style pour les cases non révélées (mer)*/
+.cell-front {
+    background-image: url('img/mer.png'); 
+    background-size: cover; 
+    background-position: center;
+}
+
+/*
+.cell-back {
+    background-image: url('fond.png'); 
+    background-size: calc(100% * NUMBER_OF_COLUMNS) calc(100% * NUMBER_OF_ROWS); 
+    background-position: var(--pos-x) var(--pos-y); 
+    display: flex;
+    justify-content: center;
+    align-items: center;
+} */
+
+/* 
+.mine-number-1, .mine-number-2, .mine-number-3, .mine-number-4, .mine-number-5, .mine-number-6, .mine-number-7, .mine-number-8 {
+    position: relative; 
+    z-index: 2; 
+}
+*/
+/* Style pour les drapeaux */
+.flag {
+    position: relative;
+    z-index: 2; /* S'assure que le drapeau est au-dessus de l'image */
+}
+
+/* Ajustements pour mobile */
+@media (max-width: 768px) {
+    table.table th, table.table td {
+        font-size: 1em; /* Réduit légèrement la taille de la police sur mobile */
+        padding: 10px;
+    }
+}
+#gameMessage {
+    font-size: 1.2em;
+    color: #555;
+    margin-top: 20px;
+}
+.transparent-bg {
+    background-color: rgba(255, 255, 255, 0.8); /* Fond blanc avec 80% d'opacité */
+    border-radius: 10px; /* Coins arrondis */
+    padding: 20px; /* Espace interne pour aérer le contenu */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Légère ombre pour faire ressortir le contenu */
+}
+.modal {
+    display: flex; /* Affiché par défaut pour faciliter les transitions */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.invite-modal {
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    max-height: 80vh !important;
+    overflow-y: auto !important;
+}
+.modal-content {
+    background-color: #fff;
+    padding: 20px;
+    width: 90%;
+    max-width: 400px;
+    border-radius: 10px;
+    text-align: center;
+    animation: fadeIn 0.5s;
+    /* Retirer la position relative */
+    /* position: relative; */
+    /* Ajouter margin pour s'assurer que le contenu est centré horizontalement */
+    margin: 0 auto;
+}
+/* Animation pour l'apparition */
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Animation pour la disparition avec rebond */
+@keyframes bounceOut {
+    20% { transform: translateY(-10px); }
+    100% { transform: translateY(100vh); opacity: 0; }
+}
+/* Classe pour déclencher l'animation de rebond */
+.modal.bounceOut .modal-content {
+    animation: bounceOut 0.7s forwards;
+}
+
+/* Cacher le modal lorsque non affiché */
+.hidden {
+    display: none;
+}
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.close:hover,
+.close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.mine-triggered {
+    position: relative;
+    background-color: red;
+}
+
+.incorrect-flag {
+    color: grey; /* Changez si nécessaire */
+    text-decoration: line-through;
+}
+
+.mine-triggered::after {
+    content: '❌';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: red;
+    font-size: 18px;
+    font-weight: bold;
+    pointer-events: none; /* Pour éviter que le pseudo-élément interfère avec les événements de la souris */
+}
+
+
+.cell {
+    width: 30px;
+    height: 30px;
+    perspective: 600px; /* Nécessaire pour l'effet 3D */
+}
+
+.cell-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+}
+
+.cell.revealed .cell-inner {
+    transform: rotateY(180deg);
+}
+
+.cell-front, .cell-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+}
+
+.cell-front {
+    /*  background-color: #ccc; Couleur de la cellule non révélée */
+}
+
+.cell-back {
+     /* background-color: #ccc; Couleur de la cellule révélée */
+    transform: rotateY(180deg);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+
+/* Mode mobile : afficher l'info sur le joueur au-dessus de la grille */
+@media (max-width: 768px) {
+    #currentTurnDisplay {
+        text-align: center;
+        margin-bottom: 20px; /* Ajouter de l'espace au-dessus du plateau */
+    }
+
+    #plateau {
+        max-width: 100%; /* Pour une meilleure utilisation de l'espace en mobile */
+    }
+}
+
+/* Mode PC : afficher l'info sur le joueur à gauche de la grille */
+@media (min-width: 769px) {
+    #gameContainer {
+        /*display: none;*/
+        justify-content: center;
+        align-items: flex-start;
+    }
+
+    #currentTurnDisplay {
+        width: 400px;
+        margin-right: 20px;
+        text-align: left;
+        align-self: flex-start; /* S'aligne en haut à gauche */
+    }
+
+    #plateau {
+        flex-direction: row;
+    }
+}
