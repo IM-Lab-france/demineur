@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Installation du Site</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header text-center bg-primary text-white">
+                    <h4>Installation du serveur Démineur multijoueur</h4>
+                </div>
+                <div class="card-body">
+                    
+                    
+                    <!-- Formulaire avec classe collapse -->
+                    <div id="formSection" class="collapse show">
+                        <p class="text-center">Entrez les informations de la base de données pour démarrer l'installation.</p>
+                        <form id="configForm">
+                            <!-- Section Base de Données -->
+                            <div class="form-group">
+                                <label for="server">Adresse du serveur</label>
+                                <input type="text" class="form-control" id="server" name="server" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="username">Utilisateur</label>
+                                <input type="text" class="form-control" id="username" name="username" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="password">Mot de passe</label>
+                                <input type="password" class="form-control" id="password" name="password" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="database">Base de données</label>
+                                <input type="text" class="form-control" id="database" name="database" required>
+                            </div>
+
+                            <!-- Section Admin Initial -->
+                            <h5 class="mt-4">Création du compte administrateur</h5>
+                            <p class="text-muted">Entrez les informations de connexion pour le premier utilisateur administrateur.</p>
+                            <div class="form-group">
+                                <label for="adminUsername">Nom d'utilisateur</label>
+                                <input type="text" class="form-control" id="adminUsername" name="adminUsername" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="adminPassword">Mot de passe</label>
+                                <input type="password" class="form-control" id="adminPassword" name="adminPassword" required>
+                            </div>
+
+                            <div class="text-center mt-3">
+                                <button type="button" id="installButton" class="btn btn-primary">Installer</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div id="results" class="mt-4">
+                        <!-- Résultats des étapes d'installation seront affichés ici -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script>
+    document.getElementById('installButton').addEventListener('click', function() {
+        // Collapser la section de formulaire
+        document.getElementById('formSection').classList.remove('show');
+
+        // Afficher un message ou lancer l'installation
+        document.getElementById('results').innerHTML = '<p class="text-center text-info">Installation en cours...</p>';
+        
+        // Appeler la logique d'installation en JavaScript (e.g., en AJAX avec install.js)
+        // Ici, une fonction d'exemple est appelée pour simuler l'installation
+        startInstallation();
+    });
+
+    function startInstallation() {
+        // Logique d'installation (ex: appel AJAX dans install.js)
+        // Mettre à jour les résultats après l'installation
+        setTimeout(() => {
+            document.getElementById('results').innerHTML = '<p class="text-center text-success">Installation commencée.</p>';
+        }, 2000);
+    }
+</script>
+
+<script src="install.js"></script>
+</body>
+</html>

@@ -1,1 +1,33 @@
+# Demineur multijoueur
+
 Et ben en voila un démineur multijoueur
+
+
+pré requis : 
+- apache2
+- mysql
+- php
+- configuration 
+
+<VirtualHost *:80>
+    ServerName <domaine>
+    DocumentRoot <repertoire du site>
+
+    <Directory <repertoire du site>>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/demineur_error.log
+    CustomLog ${APACHE_LOG_DIR}/demineur_access.log combined
+</VirtualHost>
+
+
+
+# configuration du serveur
+
+dans le repertoire racine du site, lancer la commande 
+composer install
+
+configuration de la base de données

@@ -26,6 +26,25 @@
     </style>
 </head>
 <body>
+<!-- Menu Burger -->
+<nav class="navbar navbar-expand-lg navbar-light bg-light fixed-top">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="#">Serveur Démineur</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="/admin">Admin</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/ia/deminium">Démineur IA</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
 <div class="container">
     <h1 class="text-center">Interface d'Administration du Serveur Démineur</h1>
     
@@ -48,6 +67,38 @@
 
 <script>
 $(document).ready(function(){
+
+
+    // Gestion du menu
+    document.addEventListener("DOMContentLoaded", function () {
+        const navbarToggler = document.querySelector(".navbar-toggler");
+        const navbarCollapse = document.querySelector(".navbar-collapse");
+        const navLinks = document.querySelectorAll(".nav-link");
+
+        // Fonction pour fermer le menu après un clic sur un lien (sur mobile)
+        function closeMenu() {
+            if (window.innerWidth < 992 && navbarCollapse.classList.contains("show")) {
+                navbarToggler.click();
+            }
+        }
+
+        // Ajouter l'écouteur d'événement sur chaque lien du menu
+        navLinks.forEach(link => {
+            link.addEventListener("click", closeMenu);
+        });
+
+        // Gérer la fermeture du menu burger lorsqu'on clique en dehors
+        document.addEventListener("click", function (event) {
+            const isClickInsideMenu = navbarCollapse.contains(event.target) || navbarToggler.contains(event.target);
+            if (!isClickInsideMenu && navbarCollapse.classList.contains("show")) {
+                navbarToggler.click();
+            }
+        });
+    });
+
+
+
+
     // Fonction pour afficher les messages
     function showMessage(type, message) {
         const alertHtml = `

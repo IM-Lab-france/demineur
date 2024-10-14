@@ -1,3 +1,11 @@
+<?php
+// Vérifiez si le répertoire 'vendor' existe
+if (!is_dir(__DIR__ . '/vendor')) {
+    // Redirigez vers la page d'installation si le répertoire 'vendor' n'existe pas
+    header('Location: /install/');
+    exit;
+}
+?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>

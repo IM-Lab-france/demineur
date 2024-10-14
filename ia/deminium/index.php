@@ -29,6 +29,25 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
     </style>
 </head>
 <body>
+   <!-- Menu Burger -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">Serveur Démineur</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin">Admin</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/ia/deminium">Démineur IA</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
     <!-- Conteneur des Toasts -->
     <div aria-live="polite" aria-atomic="true" style="position: fixed; top: 1rem; right: 1rem; min-width: 300px;">
         <div id="toast-container"></div>
@@ -48,19 +67,19 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                 <?php foreach ($iaList as $iaPath): ?>
                     <?php
                     $iaName = basename($iaPath);
-                    // Vérifier si les dépendances sont installées
-                    $initialized = file_exists("$iaPath/env");
-                    // Vérifier si le processus est en cours d'exécution
+                    $initialized = file_exists("$iaPath/env"); // Vérifie si les dépendances sont installées
                     $pidFile = "$iaPath/pid";
                     $running = file_exists($pidFile) && posix_kill(file_get_contents($pidFile), 0);
                     ?>
                     <tr id="ia-row-<?php echo $iaName; ?>">
                         <td>
-                            <!-- Icône de suppression -->
-                            <span class="delete-icon" data-ia="<?php echo $iaName; ?>">🗑️</span>
+                            <!-- Icône de suppression désactivée si l'IA est en cours d'exécution -->
+                            <span class="delete-icon <?php echo $running ? 'disabled' : ''; ?>" 
+                                data-ia="<?php echo $iaName; ?>" 
+                                style="<?php echo $running ? 'cursor: not-allowed; color: grey;' : ''; ?>">
+                                🗑️
+                            </span>
                             <?php echo htmlspecialchars($iaName); ?>
-                            
-                            
                         </td>
                         <td class="text-center">
                             <input type="checkbox" class="invite-checkbox" data-ia="<?php echo $iaName; ?>">
@@ -73,12 +92,12 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                             </button>
                             <button class="btn btn-success start-btn"
                                     data-ia="<?php echo $iaName; ?>"
-                                    <?php echo $initialized && !$running ? '' : 'disabled'; ?>>
+                                    <?php echo ($running || !$initialized) ? 'disabled' : ''; ?>>
                                 Démarrer
                             </button>
                             <button class="btn btn-danger stop-btn"
                                     data-ia="<?php echo $iaName; ?>"
-                                    <?php echo $running ? '' : 'disabled'; ?>>
+                                    <?php echo !$running ? 'disabled' : ''; ?>>
                                 Arrêter
                             </button>
                         </td>
@@ -155,9 +174,42 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
 
+
+
     <!-- Script AJAX et Toast -->
     <script>
+        
+        
         $(document).ready(function () {
+
+            // Gestion de l'ouverture et de la fermeture du menu burger
+            const navbarToggler = document.querySelector(".navbar-toggler");
+            const navbarCollapse = document.querySelector(".navbar-collapse");
+            const navLinks = document.querySelectorAll(".nav-link");
+
+            // Ouvrir ou fermer le menu burger lors du clic sur le bouton navbar-toggler
+            navbarToggler.addEventListener("click", function () {
+                navbarCollapse.classList.toggle("show");
+            });
+
+            // Fermer le menu burger lorsque l'on clique sur un lien
+            navLinks.forEach(link => {
+                link.addEventListener("click", function () {
+                    if (window.innerWidth < 992) { // Fermer seulement en mode mobile
+                        navbarCollapse.classList.remove("show");
+                    }
+                });
+            });
+
+            // Fermer le menu burger si un clic est effectué à l'extérieur de celui-ci
+            document.addEventListener("click", function (event) {
+                const isClickInsideMenu = navbarCollapse.contains(event.target) || navbarToggler.contains(event.target);
+                if (!isClickInsideMenu && navbarCollapse.classList.contains("show")) {
+                    navbarCollapse.classList.remove("show");
+                }
+            });
+                
+            
             // Variables pour stocker le nom et le mot de passe de l'IA
             var iaName = '';
             var iaPassword = '';
@@ -206,6 +258,7 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
             });
 
             // Gestion du clic sur le bouton "Démarrer"
+            // Gestion du clic sur le bouton "Démarrer"
             $('.start-btn').click(function () {
                 var iaName = $(this).data('ia');
                 var button = $(this);
@@ -213,15 +266,14 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                 $.ajax({
                     url: 'start.php',
                     method: 'POST',
-                    data: {iaName: iaName, invite: invite},
+                    data: { iaName: iaName, invite: invite },
                     dataType: 'json',
                     success: function (response) {
                         if (response.success) {
-                            var mode = invite ? 'avec le mode invite' : 'sans le mode invite';
-                            showToast('IA démarrée avec succès ' + mode + '.', 'success');
+                            showToast('IA démarrée avec succès.', 'success');
                             button.prop('disabled', true);
-                            // Activer le bouton "Arrêter"
                             $('#ia-row-' + iaName + ' .stop-btn').prop('disabled', false);
+                            $('#ia-row-' + iaName + ' .delete-icon').addClass('disabled').css({ 'cursor': 'not-allowed', 'color': 'grey' });
                         } else {
                             showToast(response.message, 'danger');
                         }
@@ -239,14 +291,14 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                 $.ajax({
                     url: 'stop.php',
                     method: 'POST',
-                    data: {iaName: iaName},
+                    data: { iaName: iaName },
                     dataType: 'json',
                     success: function (response) {
                         if (response.success) {
-                            showToast(response.message, 'success');
+                            showToast('IA arrêtée avec succès.', 'success');
                             button.prop('disabled', true);
-                            // Activer le bouton "Démarrer"
                             $('#ia-row-' + iaName + ' .start-btn').prop('disabled', false);
+                            $('#ia-row-' + iaName + ' .delete-icon').removeClass('disabled').css({ 'cursor': 'pointer', 'color': 'red' });
                         } else {
                             showToast(response.message, 'danger');
                         }
@@ -371,8 +423,12 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
 
             // Gestion du clic sur l'icône de suppression
             $('.delete-icon').click(function () {
+                if ($(this).hasClass('disabled')) {
+                    showToast("Veuillez arrêter l'IA avant de la supprimer.", "warning");
+                    return;
+                }
+                
                 var iaName = $(this).data('ia');
-                // Ouvrir la modale de confirmation
                 loadDeleteIaModal(iaName);
                 $('#deleteIaModal').modal('show');
             });
@@ -437,10 +493,13 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                             var row = $('#ia-row-' + iaName);
                             if (row.length) {
                                 row.find('.initialize-btn').prop('disabled', status.initialized);
-                                row.find('.start-btn').prop('disabled', !status.initialized || status.running);
+                                row.find('.start-btn').prop('disabled', status.running);
                                 row.find('.stop-btn').prop('disabled', !status.running);
+                                row.find('.delete-icon').toggleClass('disabled', status.running).css({
+                                    'cursor': status.running ? 'not-allowed' : 'pointer',
+                                    'color': status.running ? 'grey' : 'red'
+                                });
                             } else {
-                                // Si une nouvelle IA a été ajoutée, recharger la page
                                 location.reload();
                             }
                         }

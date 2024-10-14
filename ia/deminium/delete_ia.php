@@ -1,7 +1,9 @@
 <?php
 // delete_ia.php
-
-require '/../../vendor/autoload.php'; // Vérifiez que le chemin est correct
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+require '../../vendor/autoload.php';
 
 use Dotenv\Dotenv;
 
@@ -17,7 +19,6 @@ if (empty($iaName)) {
     exit;
 }
 
-// Validation du nom de l'IA
 if (!preg_match('/^[a-zA-Z0-9_-]+$/', $iaName)) {
     echo json_encode(['success' => false, 'message' => 'Nom d\'IA invalide.']);
     exit;
@@ -26,7 +27,6 @@ if (!preg_match('/^[a-zA-Z0-9_-]+$/', $iaName)) {
 $username = 'ia_' . $iaName;
 $accountsFile = './ia_accounts.json';
 
-// Vérifier si l'IA existe dans ia_accounts.json
 if (!file_exists($accountsFile)) {
     echo json_encode(['success' => false, 'message' => 'Le fichier des comptes IA est introuvable.']);
     exit;
@@ -39,7 +39,6 @@ if ($accountsData === null) {
     exit;
 }
 
-// Trouver l'index de l'IA à supprimer
 $iaIndex = null;
 foreach ($accountsData as $index => $account) {
     if ($account['username'] === $username) {
@@ -53,12 +52,9 @@ if ($iaIndex === null) {
     exit;
 }
 
-// Supprimer l'IA du fichier ia_accounts.json
 unset($accountsData[$iaIndex]);
-// Réindexer le tableau
 $accountsData = array_values($accountsData);
 
-// Sauvegarder le fichier ia_accounts.json
 if (file_put_contents($accountsFile, json_encode($accountsData, JSON_PRETTY_PRINT)) === false) {
     echo json_encode(['success' => false, 'message' => 'Erreur lors de la mise à jour du fichier des comptes.']);
     exit;
@@ -75,41 +71,56 @@ $dbpassword = $_ENV['DB_PASS'];
 try {
     $pdo = new PDO($dsn, $dbusername, $dbpassword);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $stmt = $pdo->prepare("DELETE FROM users WHERE username = :username AND is_ai = 1");
+    $stmt->execute(['username' => $username]);
 } catch (PDOException $e) {
-    echo json_encode(['success' => false, 'message' => 'Connexion à la base de données échouée : ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'Erreur de connexion ou suppression dans la base de données : ' . $e->getMessage()]);
     exit;
 }
 
-// Supprimer l'utilisateur de la base de données
-$stmt = $pdo->prepare("DELETE FROM users WHERE username = :username AND is_ai = 1");
-$stmt->execute(['username' => $username]);
-
-// Supprimer le répertoire de l'IA
+// Suppression du répertoire de l'IA
 $pluginsDir = './plugins';
 $iaDir = $pluginsDir . '/' . $iaName;
 
-if (is_dir($iaDir)) {
-    // Fonction pour supprimer récursivement un répertoire
-    function deleteDirectory($dir) {
-        if (!file_exists($dir)) {
-            return true;
+function deleteDirectory($dir) {
+    if (!file_exists($dir)) return true;
+    if (!is_dir($dir)) return unlink($dir);
+
+    $items = scandir($dir);
+    foreach ($items as $item) {
+        if ($item == '.' || $item == '..') continue;
+
+        $path = $dir . DIRECTORY_SEPARATOR . $item;
+
+        // Essayer de forcer les permissions de suppression
+        if (!is_writable($path)) {
+            @chmod($path, 0777); // Modifier les permissions si elles sont restreintes
         }
-        if (!is_dir($dir)) {
-            return unlink($dir);
-        }
-        $items = scandir($dir);
-        foreach ($items as $item) {
-            if ($item == '.' || $item == '..') {
-                continue;
+
+        if (is_dir($path)) {
+            if (!deleteDirectory($path)) {
+                echo json_encode(['success' => false, 'message' => "Impossible de supprimer le sous-répertoire : $path"]);
+                exit;
             }
-            if (!deleteDirectory($dir . DIRECTORY_SEPARATOR . $item)) {
-                return false;
+        } else {
+            if (!@unlink($path)) {
+                echo json_encode(['success' => false, 'message' => "Impossible de supprimer le fichier : $path"]);
+                exit;
             }
         }
-        return rmdir($dir);
     }
+
+    // Changer les permissions du répertoire principal avant suppression
+    if (!is_writable($dir)) {
+        @chmod($dir, 0777);
+    }
+
+    return @rmdir($dir);
+}
+
+if (is_dir($iaDir)) {
     if (!deleteDirectory($iaDir)) {
-        echo json_encode(['success' => false, 'message' => 'Erreur lors de la suppression du répertoire de l\'IA.']);
+        echo json_encode(['success' => false, 'message' => 'Erreur lors de la suppression complète du répertoire de l\'IA.']);
         exit;
     }
 }

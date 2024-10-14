@@ -92,7 +92,7 @@ if (!$inserted) {
 }
 
 // ** Création du répertoire de l'IA **
-$pluginsDir = '../plugins';
+$pluginsDir = './plugins';
 $newIaDir = $pluginsDir . '/' . $iaName;
 $templateDir = $pluginsDir . '/.template';
 
