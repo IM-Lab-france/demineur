@@ -24,10 +24,9 @@ pré requis :
 </VirtualHost>
 
 
+# Configuration de la base de données
+Le serveur mysql doit etre actif avec un schéma et un utilisateur permettant l'accès.
+
 
 # configuration du serveur
-
-dans le repertoire racine du site, lancer la commande 
-composer install
-
-configuration de la base de données
+Ouvrir un navigateur et navigué vers votre site. la procedure d'installation débutera
