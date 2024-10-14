@@ -1,6 +1,4 @@
-# Demineur multijoueur
-
-Et ben en voila un démineur multijoueur
+# Multiplayer Minesweeper
 
 
 pré requis : 
@@ -30,4 +28,6 @@ Le serveur mysql doit etre actif avec un schéma et un utilisateur permettant l'
 
 
 # configuration du serveur
-Ouvrir un navigateur et navigué vers votre site. la procedure d'installation débutera
+Ouvrir un navigateur et naviguer vers votre site. Le programme d'installation préparera le serveur. 
+Il est important de creer un fichier .htpasswd dans le repertoire admin pour le proteger.
+
