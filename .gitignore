@@ -3,4 +3,4 @@
 **__pychache__
 **logs
 **.htpasswd
-admin/.htpasswd
+*.htpasswd
