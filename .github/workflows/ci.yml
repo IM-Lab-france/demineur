@@ -32,6 +32,8 @@ jobs:
       E2E_PASSWORD1: E2e-Password!2026
       E2E_PLAYER2: e2e_player_2
       E2E_PASSWORD2: E2e-Password!2026
+      E2E_LOGOUT_USER: e2e_logout
+      E2E_LOGOUT_PASSWORD: E2e-Password!2026
       E2E_ADMIN_USER: e2e_admin
       E2E_ADMIN_PASSWORD: E2e-Admin-Password!2026
       APP_TOTP_KEY: S0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0s=

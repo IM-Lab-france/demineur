@@ -1,4 +1,6 @@
 let socket;
+let logoutRequested = false;
+let logoutTimeout;
 
 window.onload = function() {
     connectWebSocket(); // Connexion WebSocket
@@ -24,7 +26,13 @@ function connectWebSocket() {
 
     socket.onopen = function() {
         console.log('WebSocket ouvert');
-        fetchPlayerScores(); // Récupérer les scores des joueurs une fois connecté
+        if (logoutRequested) {
+            const token = sessionStorage.getItem('minesweeperSessionToken');
+            if (token) socket.send(JSON.stringify({ type: 'resume_session', sessionToken: token }));
+            else finishLogout();
+        } else {
+            fetchPlayerScores(); // Récupérer les scores des joueurs une fois connecté
+        }
     };
 
     socket.onmessage = function(event) {
@@ -33,6 +41,15 @@ function connectWebSocket() {
 
         // Traiter le message envoyé par le serveur
         switch (data.type) {
+            case 'login_success':
+                if (logoutRequested) socket.send(JSON.stringify({ type: 'logout' }));
+                break;
+
+            case 'resume_failed':
+            case 'logout_success':
+                if (logoutRequested) finishLogout();
+                break;
+
             case 'scores':
                 refreshScores(data.players); // Rafraîchir l'affichage des scores
                 break;
@@ -54,6 +71,26 @@ function connectWebSocket() {
         showScoresMessage('Erreur de connexion au serveur de scores.');
     };
 }
+
+function finishLogout() {
+    clearTimeout(logoutTimeout);
+    sessionStorage.removeItem('minesweeperSessionToken');
+    window.location.replace('/');
+}
+
+document.getElementById('logoutLink')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    if (logoutRequested) return;
+    logoutRequested = true;
+    logoutTimeout = setTimeout(finishLogout, 3000);
+    if (socket?.readyState === WebSocket.OPEN) {
+        const token = sessionStorage.getItem('minesweeperSessionToken');
+        if (token) socket.send(JSON.stringify({ type: 'resume_session', sessionToken: token }));
+        else finishLogout();
+    } else if (!socket || socket.readyState === WebSocket.CLOSED) {
+        connectWebSocket();
+    }
+});
 
 // Fonction pour récupérer les scores des joueurs
 function fetchPlayerScores() {

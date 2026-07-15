@@ -19,6 +19,8 @@ let retryInterval = 5000;
 let keepAliveInterval; 
 let reconnectTimeout;
 let isReconnecting = false;
+let logoutInProgress = false;
+let logoutFallbackTimeout;
 
 let isMuted = false;
 
@@ -185,6 +187,7 @@ function connectWebSocket() {
         setConnectionStatus('Connecté', true);
         console.log("WebSocket connecté : " + wsUrl);
         connected = true;
+        logoutInProgress = false;
         isReconnecting = false;
         clearTimeout(reconnectTimeout);
         clearInterval(keepAliveInterval);
@@ -339,7 +342,9 @@ function connectWebSocket() {
                 currentPlayerDisplay.textContent = data.message;
                 break;
             case 'logout_success':
-                handleLogoutSuccess(data);
+                clearTimeout(logoutFallbackTimeout);
+                logoutInProgress = false;
+                handleLogoutSuccess();
                 break;
 
             case 'error':
@@ -362,6 +367,11 @@ function connectWebSocket() {
     };
 
     socket.onclose = function() {
+        if (logoutInProgress) {
+            logoutInProgress = false;
+            handleLogoutSuccess();
+            return;
+        }
         setConnectionStatus('Reconnexion…', false);
         logMessage('Connexion WebSocket fermée.');
         connected = false; // Indiquer que le client est déconnecté
@@ -393,7 +403,7 @@ function showLoginForm() {
 
 // Fonction pour essayer de se reconnecter régulièrement si déconnecté
 function attemptReconnect() {
-    if (!connected && !isReconnecting) { // Vérifie si déjà en cours de reconnexion
+    if (!logoutInProgress && !connected && !isReconnecting) { // Vérifie si déjà en cours de reconnexion
         isReconnecting = true; // Empêche les nouvelles tentatives pendant la reconnexion
         clearTimeout(reconnectTimeout);
         reconnectTimeout = setTimeout(function() {
@@ -699,7 +709,10 @@ function showNotYourTurnPopup() {
     }, 2000); // Affiche la popin pendant 2 secondes
 }
 
-function handleLogoutSuccess(data) {
+function handleLogoutSuccess() {
+    sessionStorage.removeItem('minesweeperSessionToken');
+    clearTimeout(logoutFallbackTimeout);
+    clearGameBoard();
     username = undefined;
     currentPlayerId = undefined;
     currentGameId = undefined;
@@ -817,17 +830,27 @@ function hideModal(modal) {
     }, { once: true });
 }
 
-document.getElementById('logoutLink').addEventListener('click', () => {
+document.getElementById('logoutLink').addEventListener('click', (event) => {
+    event.preventDefault();
+    if (logoutInProgress) return;
+    logoutInProgress = true;
     sessionStorage.removeItem('minesweeperSessionToken');
-    clearGameBoard(); 
-    socket.send(JSON.stringify({ type: 'logout' }));
-    setElementDisplay(document.getElementById('welcomeMessage'), 'none');
-    setElementDisplay(document.getElementById('logoutLink'), 'none');
-    
-    setElementDisplay(document.getElementById('game'), 'none');
-    setElementDisplay(document.getElementById('navbar'), 'none');
     logMessage('Déconnexion de ' + username);
-    connected = false;
+    handleLogoutSuccess();
+    if (socket?.readyState === WebSocket.OPEN) {
+        try {
+            socket.send(JSON.stringify({ type: 'logout' }));
+            logoutFallbackTimeout = setTimeout(() => {
+                logoutInProgress = false;
+                showLoginModal();
+            }, 2000);
+        } catch (error) {
+            console.error('Envoi de la déconnexion impossible :', error);
+            logoutInProgress = false;
+        }
+    } else {
+        logoutInProgress = false;
+    }
 });
 
 document.getElementById('acceptInviteBtn').addEventListener('click', acceptInvite);

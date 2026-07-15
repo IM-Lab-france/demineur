@@ -7,7 +7,7 @@ $password = getenv('E2E_PASSWORD') ?: 'E2e-Password!2026';
 $pdo = (new Database())->getPDO();
 $stmt = $pdo->prepare('INSERT INTO users (username,password_hash) VALUES (:username,:hash) '
     . 'ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), is_disabled=0');
-foreach (['e2e_player_1', 'e2e_player_2'] as $username) {
+foreach (['e2e_player_1', 'e2e_player_2', 'e2e_logout'] as $username) {
     $stmt->execute(['username' => $username, 'hash' => password_hash($password, PASSWORD_DEFAULT)]);
 }
 $adminPassword = getenv('E2E_ADMIN_PASSWORD') ?: 'E2e-Admin-Password!2026';

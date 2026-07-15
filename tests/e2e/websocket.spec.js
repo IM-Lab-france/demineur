@@ -49,3 +49,42 @@ test('deux joueurs peuvent démarrer une partie et jouer un coup', async () => {
   expect(await update).toMatchObject({ type: 'update_board' });
   clients.forEach(c => c.socket.close());
 });
+
+test('la déconnexion révoque la session persistante', async () => {
+  const username = process.env.E2E_LOGOUT_USER;
+  const password = process.env.E2E_LOGOUT_PASSWORD;
+  test.skip(!wsUrl || !username || !password, 'Compte de déconnexion E2E non configuré');
+
+  const open = () => new Promise((resolve, reject) => {
+    const socket = new WebSocket(wsUrl, { origin: process.env.E2E_ORIGIN || 'http://localhost' });
+    socket.once('open', () => resolve(socket));
+    socket.once('error', reject);
+  });
+  const waitFor = (socket, expectedTypes) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Message ${expectedTypes.join('/')} non reçu`)), 10000);
+    const handler = raw => {
+      const data = JSON.parse(raw);
+      if (expectedTypes.includes(data.type)) {
+        clearTimeout(timer);
+        socket.off('message', handler);
+        resolve(data);
+      }
+    };
+    socket.on('message', handler);
+  });
+
+  const socket = await open();
+  const loggedIn = waitFor(socket, ['login_success']);
+  socket.send(JSON.stringify({ type: 'login', username, password }));
+  const login = await loggedIn;
+  const loggedOut = waitFor(socket, ['logout_success']);
+  socket.send(JSON.stringify({ type: 'logout' }));
+  await loggedOut;
+  socket.close();
+
+  const resumedSocket = await open();
+  const resumed = waitFor(resumedSocket, ['resume_failed', 'login_success']);
+  resumedSocket.send(JSON.stringify({ type: 'resume_session', sessionToken: login.sessionToken }));
+  expect((await resumed).type).toBe('resume_failed');
+  resumedSocket.close();
+});
