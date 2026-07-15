@@ -1,0 +1,7 @@
+[Unit]
+Description=Contrôle de santé du Démineur
+After=minesweeper-websocket.service
+
+[Service]
+Type=oneshot
+ExecStart=/var/www/demineur/scripts/check-health.sh

@@ -52,6 +52,7 @@ $status = [
     'restoreTestTimer' => trim((string) shell_exec('/usr/bin/systemctl is-active minesweeper-backup-verify.timer 2>/dev/null')),
     'lastBackup' => readOperationalStatus('/var/log/minesweeper/backup-status.json'),
     'lastRestoreTest' => readOperationalStatus('/var/log/minesweeper/restore-status.json'),
+    'health' => readOperationalStatus('/var/log/minesweeper/health-status.json'),
 ];
 
 echo json_encode($status);

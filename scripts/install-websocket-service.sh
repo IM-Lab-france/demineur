@@ -26,6 +26,8 @@ backup_timer_source="$project_dir/deploy/systemd/minesweeper-backup.timer"
 backup_verify_service_source="$project_dir/deploy/systemd/minesweeper-backup-verify.service"
 backup_verify_timer_source="$project_dir/deploy/systemd/minesweeper-backup-verify.timer"
 ai_service_source="$project_dir/deploy/systemd/minesweeper-ai@.service"
+health_service_source="$project_dir/deploy/systemd/minesweeper-health.service"
+health_timer_source="$project_dir/deploy/systemd/minesweeper-health.timer"
 
 [[ -f "$service_source" ]] || { echo "Unité absente: $service_source" >&2; exit 1; }
 [[ -f "$config_env" ]] || { echo "Configuration absente dans $secure_dir" >&2; exit 1; }
@@ -52,6 +54,16 @@ set -a
 # shellcheck disable=SC1090
 source "$service_env"
 set +a
+if [[ ! "${APP_TOTP_KEY:-}" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+    APP_TOTP_KEY=$(openssl rand -base64 32 | tr -d '\n')
+    config_tmp=$(mktemp)
+    awk '!/^APP_TOTP_KEY=/' "$service_env" > "$config_tmp"
+    printf 'APP_TOTP_KEY=%s\n' "$APP_TOTP_KEY" >> "$config_tmp"
+    install -o root -g minesweeper -m 0640 "$config_tmp" "$service_env"
+    install -o root -g minesweeper -m 0640 "$config_tmp" "$secure_dir/.env"
+    rm -f "$config_tmp"
+    export APP_TOTP_KEY
+fi
 if [[ -f "$project_dir/install/migrations/20260715_active_games.sql" ]]; then
     MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260715_active_games.sql"
 fi
@@ -66,6 +78,9 @@ if [[ -f "$project_dir/install/migrations/20260715_admin_totp.sql" ]]; then
         printf "UPDATE users SET totp_secret='%s', totp_enabled_at=COALESCE(totp_enabled_at,CURRENT_TIMESTAMP) WHERE is_admin=1 AND totp_secret IS NULL;\n" "$ADMIN_TOTP_SECRET" \
           | MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME"
     fi
+fi
+if [[ -f "$project_dir/install/migrations/20260715_admin_login_throttle.sql" ]]; then
+    MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260715_admin_login_throttle.sql"
 fi
 if [[ ! -f "$secure_dir/ia_accounts.json" && -f "$legacy_ia_accounts" ]]; then
     install -o root -g minesweeper -m 0640 "$legacy_ia_accounts" "$secure_dir/ia_accounts.json"
@@ -85,6 +100,8 @@ install -o root -g root -m 0644 "$backup_service_source" /etc/systemd/system/min
 install -o root -g root -m 0644 "$backup_timer_source" /etc/systemd/system/minesweeper-backup.timer
 install -o root -g root -m 0644 "$backup_verify_service_source" /etc/systemd/system/minesweeper-backup-verify.service
 install -o root -g root -m 0644 "$backup_verify_timer_source" /etc/systemd/system/minesweeper-backup-verify.timer
+install -o root -g root -m 0644 "$health_service_source" /etc/systemd/system/minesweeper-health.service
+install -o root -g root -m 0644 "$health_timer_source" /etc/systemd/system/minesweeper-health.timer
 install -o root -g root -m 0644 "$ai_service_source" /etc/systemd/system/minesweeper-ai@.service
 
 sudoers_tmp=$(mktemp)
@@ -99,6 +116,7 @@ systemctl daemon-reload
 systemctl enable "$service_name"
 systemctl enable --now minesweeper-backup.timer
 systemctl enable --now minesweeper-backup-verify.timer
+systemctl enable --now minesweeper-health.timer
 systemctl restart "$service_name"
 a2enmod proxy proxy_http proxy_wstunnel headers expires rewrite
 a2enconf minesweeper-websocket minesweeper-security

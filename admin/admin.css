@@ -6,3 +6,5 @@ body { padding-top: 50px; }
 .totp-qr { width: 280px; height: 280px; image-rendering: pixelated; }
 .totp-secret { overflow-wrap: anywhere; font-size: 1rem; }
 .totp-code { max-width: 14rem; font-size: 1.5rem; letter-spacing: .25rem; }
+.recovery-codes { columns: 2; list-style: none; padding-left: 0; }
+@media (max-width: 480px) { .recovery-codes { columns: 1; } }

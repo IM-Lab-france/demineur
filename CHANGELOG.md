@@ -18,6 +18,9 @@
 - Secure CLI-only installer and one-command upgrade finalizer.
 - Automated two-player invitation and first-move integration test.
 - Encrypted off-site backup support through `age`.
+- One-time MFA recovery codes and encrypted per-administrator TOTP secrets.
+- Persistent database-backed throttling for administration logins.
+- Hourly systemd health checks surfaced in the administration dashboard.
 
 ### Changed
 
@@ -30,6 +33,7 @@
 - Replaced IA pickle memory with bounded, atomically written JSON.
 - Differentiated easy, medium and hard AI behavior with a decision timeout.
 - Unified Apache/PHP and systemd database configuration after secret rotation.
+- Extracted administration login throttling into a dedicated repository component.
 
 ### Security
 

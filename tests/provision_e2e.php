@@ -10,4 +10,8 @@ $stmt = $pdo->prepare('INSERT INTO users (username,password_hash) VALUES (:usern
 foreach (['e2e_player_1', 'e2e_player_2'] as $username) {
     $stmt->execute(['username' => $username, 'hash' => password_hash($password, PASSWORD_DEFAULT)]);
 }
+$adminPassword = getenv('E2E_ADMIN_PASSWORD') ?: 'E2e-Admin-Password!2026';
+$admin = $pdo->prepare('INSERT INTO users (username,password_hash,is_admin,totp_secret,totp_enabled_at,totp_recovery_codes) VALUES (:username,:hash,1,NULL,NULL,NULL) '
+    . 'ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash),is_admin=1,totp_secret=NULL,totp_enabled_at=NULL,totp_recovery_codes=NULL');
+$admin->execute(['username' => getenv('E2E_ADMIN_USER') ?: 'e2e_admin', 'hash' => password_hash($adminPassword, PASSWORD_DEFAULT)]);
 echo "Comptes E2E prêts.\n";

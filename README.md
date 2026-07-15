@@ -91,4 +91,23 @@ Cette commande applique les migrations, synchronise la configuration Apache/syst
 
 Chaque administrateur peut activer son propre TOTP depuis `/admin/security.php`.
 Le QR Code est généré localement et un premier code à six chiffres doit être
-validé avant l’activation.
+validé avant l’activation. Dix codes de récupération à usage unique sont alors
+affichés une seule fois. Le secret TOTP est chiffré en base avec `APP_TOTP_KEY`.
+
+Les échecs de connexion administrateur sont comptabilisés en base par compte
+et par couple adresse/compte. Cinq échecs dans une fenêtre de quinze minutes
+bloquent les nouvelles tentatives pendant quinze minutes, même si les cookies
+du navigateur sont supprimés.
+
+## Supervision et copie hors serveur
+
+`minesweeper-health.timer` contrôle chaque heure le backend, les timers et l’âge
+des dernières sauvegardes/restaurations. Le résultat apparaît dans
+l’administration et les anomalies sont envoyées au journal système sous le tag
+`minesweeper-health`.
+
+Pour activer une copie chiffrée hors serveur, installez `age`, montez une
+destination distante puis ajoutez `OFFSITE_BACKUP_DIR` et
+`BACKUP_AGE_RECIPIENT` dans les fichiers sécurisés. La clé privée `age` doit être
+conservée sur une autre machine et un test de restauration hors site doit être
+effectué après configuration.

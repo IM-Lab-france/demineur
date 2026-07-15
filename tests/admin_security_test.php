@@ -25,5 +25,14 @@ $qrResult = (new Endroid\QrCode\Builder\Builder(
     margin: 12,
 ))->build();
 assert_admin_security(str_starts_with($qrResult->getDataUri(), 'data:image/png;base64,'), 'Le QR Code doit être généré localement en PNG.');
+$_ENV['APP_TOTP_KEY'] = base64_encode(str_repeat('K', 32));
+putenv('APP_TOTP_KEY=' . $_ENV['APP_TOTP_KEY']);
+$encryptedSecret = encrypt_totp_secret($generatedSecret);
+assert_admin_security($encryptedSecret !== $generatedSecret && str_starts_with($encryptedSecret, 'v1:'), 'Le secret TOTP doit être chiffré en base.');
+assert_admin_security(decrypt_totp_secret($encryptedSecret) === $generatedSecret, 'Le secret TOTP chiffré doit pouvoir être relu.');
+assert_admin_security(decrypt_totp_secret($encryptedSecret . 'altéré') === '', 'Un secret TOTP altéré doit être refusé.');
+$recoveryCodes = generate_totp_recovery_codes();
+assert_admin_security(count($recoveryCodes) === 10 && count(array_unique($recoveryCodes)) === 10, 'Dix codes de récupération uniques doivent être générés.');
+assert_admin_security((bool) preg_match('/^[A-F0-9]{4}(?:-[A-F0-9]{4}){2}$/', $recoveryCodes[0]), 'Le format des codes de récupération doit être lisible.');
 
 echo "Tests de sécurité administrateur réussis.\n";

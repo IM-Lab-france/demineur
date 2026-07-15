@@ -64,7 +64,8 @@ $stmt->execute(['username' => $adminUser, 'hash' => password_hash($adminPassword
 
 $secureDir = '/var/www/secure';
 if (!is_dir($secureDir) && !mkdir($secureDir, 02770, true)) throw new RuntimeException('Création du répertoire sécurisé impossible.');
-$config = "DB_HOST={$host}\nDB_USER={$dbUser}\nDB_PASS={$dbPassword}\nDB_NAME={$database}\n";
+$totpKey = base64_encode(random_bytes(32));
+$config = "DB_HOST={$host}\nDB_USER={$dbUser}\nDB_PASS={$dbPassword}\nDB_NAME={$database}\nAPP_TOTP_KEY={$totpKey}\n";
 $temp = $secureDir . '/minesweeper-service.env.tmp';
 file_put_contents($temp, $config, LOCK_EX);
 chmod($temp, 0640);

@@ -10,12 +10,23 @@ CREATE TABLE `users` (
   `games_won` int DEFAULT '0',
   `is_ai` tinyint(1) DEFAULT '0',
   `is_disabled` tinyint(1) NOT NULL DEFAULT '0',
-  `totp_secret` varchar(64) COLLATE utf8mb4_bin DEFAULT NULL,
+  `totp_secret` varchar(512) COLLATE utf8mb4_bin DEFAULT NULL,
   `totp_enabled_at` timestamp NULL DEFAULT NULL,
+  `totp_recovery_codes` json DEFAULT NULL,
   `games_draw` int DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username_UNIQUE` (`username`),
   CONSTRAINT `chk_user_stats` CHECK (`games_played` >= 0 AND `games_won` >= 0 AND `games_draw` >= 0 AND `games_won` <= `games_played` AND `games_draw` <= `games_played`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `admin_login_attempts` (
+  `identifier_hash` char(64) NOT NULL,
+  `attempts` smallint unsigned NOT NULL DEFAULT '0',
+  `window_started_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `blocked_until` timestamp NULL DEFAULT NULL,
+  `last_attempt_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`identifier_hash`),
+  KEY `idx_admin_login_attempts_last` (`last_attempt_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `invitations` (

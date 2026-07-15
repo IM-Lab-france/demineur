@@ -63,6 +63,8 @@ $(document).ready(function(){
                 $('#restore-status').text(response.restoreTestTimer === 'active' ? 'planifié' : 'inactif');
                 $('#last-backup').text(response.lastBackup?.completedAt || 'Jamais').toggleClass('text-danger', !response.lastBackup || response.lastBackup.ageSeconds > 129600);
                 $('#last-restore').text(response.lastRestoreTest?.completedAt || 'Jamais').toggleClass('text-danger', !response.lastRestoreTest || response.lastRestoreTest.ageSeconds > 691200);
+                const healthOk = response.health?.status === 'success';
+                $('#health-status').text(response.health?.message || 'Aucun contrôle').toggleClass('text-success', healthOk).toggleClass('text-danger', !healthOk);
 
                 // Activer/désactiver les boutons en fonction de l'état du serveur
                 $('#start-button').prop('disabled', serverIsOnline);

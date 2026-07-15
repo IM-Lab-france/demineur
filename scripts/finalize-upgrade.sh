@@ -20,6 +20,7 @@ fi
 
 systemctl start minesweeper-backup.service
 systemctl start minesweeper-backup-verify.service
+systemctl start minesweeper-health.service
 chown root:minesweeper /var/log/minesweeper/backup-status.json /var/log/minesweeper/restore-status.json
 chmod 0640 /var/log/minesweeper/backup-status.json /var/log/minesweeper/restore-status.json
 
@@ -28,4 +29,4 @@ apache2ctl configtest
 systemctl reload apache2
 
 echo "Mise à niveau appliquée."
-systemctl --no-pager --full status minesweeper-websocket.service minesweeper-ai@Jimbo.service minesweeper-backup.timer minesweeper-backup-verify.timer
+systemctl --no-pager --full status minesweeper-websocket.service minesweeper-ai@Jimbo.service minesweeper-backup.timer minesweeper-backup-verify.timer minesweeper-health.timer
