@@ -693,7 +693,7 @@ async function handleRegister() {
 // Fonction pour vider le plateau de jeu
 function clearGameBoard() {
     const gameBoardDiv = document.getElementById('gameBoard');
-    gameBoardDiv.innerHTML = '';  // Supprimer tout le contenu du plateau de jeu
+    if (gameBoardDiv) gameBoardDiv.innerHTML = '';  // Supprimer tout le contenu du plateau de jeu
     logMessage('Le plateau de jeu a été vidé.');
 }
 
@@ -834,12 +834,11 @@ document.getElementById('logoutLink').addEventListener('click', (event) => {
     event.preventDefault();
     if (logoutInProgress) return;
     logoutInProgress = true;
-    sessionStorage.removeItem('minesweeperSessionToken');
+    const sessionToken = sessionStorage.getItem('minesweeperSessionToken');
     logMessage('Déconnexion de ' + username);
-    handleLogoutSuccess();
     if (socket?.readyState === WebSocket.OPEN) {
         try {
-            socket.send(JSON.stringify({ type: 'logout' }));
+            socket.send(JSON.stringify({ type: 'logout', sessionToken }));
             logoutFallbackTimeout = setTimeout(() => {
                 logoutInProgress = false;
                 showLoginModal();
@@ -851,6 +850,7 @@ document.getElementById('logoutLink').addEventListener('click', (event) => {
     } else {
         logoutInProgress = false;
     }
+    handleLogoutSuccess();
 });
 
 document.getElementById('acceptInviteBtn').addEventListener('click', acceptInvite);

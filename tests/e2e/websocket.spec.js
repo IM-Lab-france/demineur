@@ -77,10 +77,13 @@ test('la déconnexion révoque la session persistante', async () => {
   const loggedIn = waitFor(socket, ['login_success']);
   socket.send(JSON.stringify({ type: 'login', username, password }));
   const login = await loggedIn;
-  const loggedOut = waitFor(socket, ['logout_success']);
-  socket.send(JSON.stringify({ type: 'logout' }));
-  await loggedOut;
   socket.close();
+
+  const logoutSocket = await open();
+  const loggedOut = waitFor(logoutSocket, ['logout_success']);
+  logoutSocket.send(JSON.stringify({ type: 'logout', sessionToken: login.sessionToken }));
+  await loggedOut;
+  logoutSocket.close();
 
   const resumedSocket = await open();
   const resumed = waitFor(resumedSocket, ['resume_failed', 'login_success']);

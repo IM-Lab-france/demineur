@@ -28,7 +28,7 @@ function connectWebSocket() {
         console.log('WebSocket ouvert');
         if (logoutRequested) {
             const token = sessionStorage.getItem('minesweeperSessionToken');
-            if (token) socket.send(JSON.stringify({ type: 'resume_session', sessionToken: token }));
+            if (token) socket.send(JSON.stringify({ type: 'logout', sessionToken: token }));
             else finishLogout();
         } else {
             fetchPlayerScores(); // Récupérer les scores des joueurs une fois connecté
@@ -41,10 +41,6 @@ function connectWebSocket() {
 
         // Traiter le message envoyé par le serveur
         switch (data.type) {
-            case 'login_success':
-                if (logoutRequested) socket.send(JSON.stringify({ type: 'logout' }));
-                break;
-
             case 'resume_failed':
             case 'logout_success':
                 if (logoutRequested) finishLogout();
@@ -85,7 +81,7 @@ document.getElementById('logoutLink')?.addEventListener('click', (event) => {
     logoutTimeout = setTimeout(finishLogout, 3000);
     if (socket?.readyState === WebSocket.OPEN) {
         const token = sessionStorage.getItem('minesweeperSessionToken');
-        if (token) socket.send(JSON.stringify({ type: 'resume_session', sessionToken: token }));
+        if (token) socket.send(JSON.stringify({ type: 'logout', sessionToken: token }));
         else finishLogout();
     } else if (!socket || socket.readyState === WebSocket.CLOSED) {
         connectWebSocket();

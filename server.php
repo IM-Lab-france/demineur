@@ -188,7 +188,7 @@ class MinesweeperServer implements MessageComponentInterface {
             'payload' => $loggedData,
         ]);
 
-        $publicMessages = ['register', 'login', 'resume_session', 'ping', 'get_scores', 'get_player_count', 'get_active_games'];
+        $publicMessages = ['register', 'login', 'resume_session', 'logout', 'ping', 'get_scores', 'get_player_count', 'get_active_games'];
         if (!in_array($data['type'], $publicMessages, true) && !$this->isAuthenticated($from)) {
             $this->sendError($from, 'Authentification requise.');
             return;
@@ -232,7 +232,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 break;
 
             case 'logout':
-                $this->handleLogout($from);
+                $this->handleLogout($from, $data);
                 break;
 
             case 'refresh_players':
@@ -850,9 +850,15 @@ class MinesweeperServer implements MessageComponentInterface {
         }
     }
 
-    protected function handleLogout(ConnectionInterface $from) {
+    protected function handleLogout(ConnectionInterface $from, array $data = []) {
         // Si le joueur est déjà déconnecté ou introuvable
         if (!isset($this->players[$from->resourceId])) {
+            $sessionToken = $data['sessionToken'] ?? '';
+            if (is_string($sessionToken) && preg_match('/^[a-f0-9]{64}$/', $sessionToken)) {
+                unset($this->authSessions[$sessionToken]);
+                $this->deletePersistedAuthSession($sessionToken);
+            }
+            $from->send(json_encode(['type' => 'logout_success', 'message' => 'Déconnexion réussie']));
             return;
         }
     

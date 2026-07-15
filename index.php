@@ -39,7 +39,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
                     <button id="muteButton" class="btn btn-light" aria-label="Couper ou rétablir le son">🔊</button>
                 </li>
                 <li class="nav-item">
-                    <a id="logoutLink" class="nav-link text-danger" href="#">Déconnexion</a>
+                    <button id="logoutLink" class="btn btn-link nav-link text-danger" type="button">Déconnexion</button>
                 </li>
             </ul>
         </div>
