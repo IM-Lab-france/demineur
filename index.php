@@ -92,6 +92,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
             </div>
             <button id="loginBtn" class="btn btn-primary">Connexion</button>
             <p>Pas encore de compte ? <a href="#" id="showRegisterModal">Créez-en un ici !</a></p>
+            <p><a href="/forgot-password.php">Mot de passe oublié ?</a></p>
             <p id="loginError" class="text-danger"></p>
             <p id="creationOk" class="text-success"></p>
         </div>
@@ -105,10 +106,17 @@ if (!is_dir(__DIR__ . '/vendor')) {
                 <input type="text" id="registerUsername" class="form-control" placeholder="Choisissez un nom d'utilisateur">
             </div>
             <div class="form-group">
+                <input type="email" id="registerEmail" class="form-control" placeholder="Votre adresse e-mail" autocomplete="email">
+            </div>
+            <div class="form-group">
                 <input type="password" id="registerPassword" class="form-control" placeholder="Choisissez un mot de passe">
+            </div>
+            <div class="form-group">
+                <input type="password" id="registerPasswordConfirmation" class="form-control" placeholder="Confirmez le mot de passe">
             </div>
             <button id="registerBtn" class="btn btn-secondary">Créer mon compte</button>
             <p>Déjà un compte ? <a href="#" id="showLoginModal">Connectez-vous ici !</a></p>
+            <p><a href="/resend-verification.php">Renvoyer l’e-mail de validation</a></p>
             <p id="registerError" class="text-danger"></p>
         </div>
 </div>

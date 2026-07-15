@@ -65,6 +65,9 @@ $(document).ready(function(){
                 $('#last-restore').text(response.lastRestoreTest?.completedAt || 'Jamais').toggleClass('text-danger', !response.lastRestoreTest || response.lastRestoreTest.ageSeconds > 691200);
                 const healthOk = response.health?.status === 'success';
                 $('#health-status').text(response.health?.message || 'Aucun contrôle').toggleClass('text-success', healthOk).toggleClass('text-danger', !healthOk);
+                const mailHealthy = response.mailConfigured && Number(response.mailQueueFailed || 0) === 0;
+                const mailLabel = response.mailConfigured ? `configuré — ${response.mailQueuePending || 0} en attente, ${response.mailQueueFailed || 0} en échec` : 'non configuré';
+                $('#mail-status').text(mailLabel).toggleClass('text-success', mailHealthy).toggleClass('text-danger', !mailHealthy);
 
                 // Activer/désactiver les boutons en fonction de l'état du serveur
                 $('#start-button').prop('disabled', serverIsOnline);

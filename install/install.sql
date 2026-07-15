@@ -3,6 +3,7 @@ CREATE TABLE `users` (
   `username` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `is_admin` tinyint(1) NOT NULL DEFAULT '0',
   `email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `email_verified_at` timestamp NULL DEFAULT NULL,
   `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `last_active` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -16,6 +17,7 @@ CREATE TABLE `users` (
   `games_draw` int DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username_UNIQUE` (`username`),
+  UNIQUE KEY `uq_users_email` (`email`),
   CONSTRAINT `chk_user_stats` CHECK (`games_played` >= 0 AND `games_won` >= 0 AND `games_draw` >= 0 AND `games_won` <= `games_played` AND `games_draw` <= `games_played`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -27,6 +29,30 @@ CREATE TABLE `admin_login_attempts` (
   `last_attempt_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`identifier_hash`),
   KEY `idx_admin_login_attempts_last` (`last_attempt_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `account_tokens` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `token_hash` char(64) NOT NULL,
+  `user_id` int NOT NULL,
+  `purpose` enum('verify_email','reset_password') NOT NULL,
+  `expires_at` timestamp NOT NULL,
+  `used_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`), UNIQUE KEY `uq_account_tokens_hash` (`token_hash`),
+  KEY `idx_account_tokens_user_purpose` (`user_id`,`purpose`), KEY `idx_account_tokens_expiry` (`expires_at`),
+  CONSTRAINT `fk_account_tokens_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `email_outbox` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `payload_encrypted` text COLLATE utf8mb4_bin NOT NULL,
+  `attempts` tinyint unsigned NOT NULL DEFAULT '0',
+  `next_attempt_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_error` varchar(191) DEFAULT NULL,
+  `sent_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`), KEY `idx_email_outbox_pending` (`sent_at`,`next_attempt_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `invitations` (

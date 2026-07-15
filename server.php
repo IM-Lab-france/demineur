@@ -24,6 +24,9 @@ use Monolog\Handler\RotatingFileHandler;
 
 require __DIR__ . '/db.php';
 require __DIR__ . '/src/AuthSessionRepository.php';
+require __DIR__ . '/src/AccountTokenService.php';
+require __DIR__ . '/src/MailService.php';
+require __DIR__ . '/src/MailQueueRepository.php';
 
 
 // Le logger est initialisé avant le serveur et la base afin de conserver aussi
@@ -109,6 +112,7 @@ class MinesweeperServer implements MessageComponentInterface {
     protected $authAttempts = [];
     protected $registrationAttempts = [];
     protected $authSessions = [];
+    protected $sessionValidationTimes = [];
     protected $pendingReconnects = [];
     protected $recoverableGames = [];
     protected $actionWindows = [];
@@ -180,6 +184,7 @@ class MinesweeperServer implements MessageComponentInterface {
         $loggedData = $data;
         unset($loggedData['password']);
         unset($loggedData['sessionToken']);
+        unset($loggedData['email']);
         $this->logger->info('Action backend reçue.', [
             'action' => $data['type'],
             'connection_id' => $from->resourceId,
@@ -337,6 +342,7 @@ class MinesweeperServer implements MessageComponentInterface {
         // Supprimer le joueur de la liste des joueurs connectés
         if (!$reconnectPending) unset($this->players[$disconnectedPlayerId]);
         unset($this->actionWindows[$disconnectedPlayerId]);
+        unset($this->sessionValidationTimes[$disconnectedPlayerId]);
     
         // Envoyer la liste mise à jour des joueurs connectés à tous les autres clients
         $this->sendConnectedPlayersList($from);
@@ -392,7 +398,23 @@ class MinesweeperServer implements MessageComponentInterface {
     }
 
     protected function isAuthenticated(ConnectionInterface $connection) {
-        return isset($this->players[$connection->resourceId]);
+        $player = $this->players[$connection->resourceId] ?? null;
+        if (!$player) return false;
+        $lastValidation = $this->sessionValidationTimes[$connection->resourceId] ?? 0;
+        if (time() - $lastValidation < 15) return true;
+        $token = $player['session_token'] ?? '';
+        try {
+            if (!is_string($token) || !$this->authSessionRepository->findValid($token)) {
+                if (is_string($token)) unset($this->authSessions[$token]);
+                unset($this->sessionValidationTimes[$connection->resourceId]);
+                $connection->close();
+                return false;
+            }
+            $this->sessionValidationTimes[$connection->resourceId] = time();
+        } catch (Throwable $e) {
+            $this->logger->warning('Validation périodique de session impossible.', ['error' => $e->getMessage()]);
+        }
+        return true;
     }
 
     protected function getAuthAttemptKey(ConnectionInterface $connection, $username) {
@@ -598,6 +620,7 @@ class MinesweeperServer implements MessageComponentInterface {
         $this->registrationAttempts[] = $now;
         $username = isset($data['username']) ? trim($data['username']) : '';
         $password = $data['password'] ?? '';
+        $email = mb_strtolower(trim((string) ($data['email'] ?? '')), 'UTF-8');
 
         if (!preg_match('/^[\p{L}\p{N}_-]{3,32}$/u', $username)) {
             $from->send(json_encode(['type' => 'register_failed', 'message' => 'Le nom doit contenir 3 à 32 lettres, chiffres, tirets ou underscores.']));
@@ -607,19 +630,29 @@ class MinesweeperServer implements MessageComponentInterface {
             $from->send(json_encode(['type' => 'register_failed', 'message' => 'Le mot de passe doit contenir entre 10 et 128 caractères.']));
             return;
         }
+        if (strlen($email) > 254 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $from->send(json_encode(['type' => 'register_failed', 'message' => 'Adresse e-mail invalide.']));
+            return;
+        }
+        try {
+            $mailService = new MailService();
+        } catch (Throwable $e) {
+            $this->logger->error('Inscription indisponible : configuration e-mail absente.');
+            $from->send(json_encode(['type' => 'register_failed', 'message' => 'L’inscription par e-mail est temporairement indisponible.']));
+            return;
+        }
     
         // Utilisation de la base de données pour vérifier si le nom d'utilisateur existe déjà
         $db = $this->db;
-        $stmt = $db->getPDO()->prepare("SELECT * FROM users WHERE username = :username");
-        $stmt->bindParam(':username', $username);
-        $stmt->execute();
+        $stmt = $db->getPDO()->prepare("SELECT id FROM users WHERE username=:username OR email=:email LIMIT 1");
+        $stmt->execute(['username' => $username, 'email' => $email]);
         $existingUser = $stmt->fetch(PDO::FETCH_ASSOC);
     
         if ($existingUser) {
             // L'utilisateur avec ce login existe déjà
             $from->send(json_encode([
                 'type' => 'register_failed',
-                'message' => 'Nom d\'utilisateur déjà pris.'
+                'message' => 'Ce nom d’utilisateur ou cette adresse e-mail est déjà utilisé.'
             ]));
             $this->logger->error("OUT:" . json_encode([
                 'type' => 'register_failed',
@@ -633,22 +666,37 @@ class MinesweeperServer implements MessageComponentInterface {
     
             // Insérer le nouvel utilisateur dans la base de données
             $stmt = $db->getPDO()->prepare("
-                INSERT INTO users (username, password_hash, created_at)
-                VALUES (:username, :password_hash, NOW())
+                INSERT INTO users (username, email, email_verified_at, password_hash, created_at)
+                VALUES (:username, :email, NULL, :password_hash, NOW())
             ");
-            $stmt->bindParam(':username', $username);
-            $stmt->bindParam(':password_hash', $passwordHash);
+            $registrationCommitted = false;
             try {
-                $stmt->execute();
+                $db->getPDO()->beginTransaction();
+                $stmt->execute(['username' => $username, 'email' => $email, 'password_hash' => $passwordHash]);
+                $userId = (int) $db->getPDO()->lastInsertId();
+                $token = (new AccountTokenService($db->getPDO()))->issue($userId, 'verify_email', 86400);
+                $db->getPDO()->commit();
+                $registrationCommitted = true;
+                (new MailQueueRepository($db->getPDO()))->enqueue($email, 'verify_email', $username, $token);
             } catch (PDOException $e) {
+                if ($db->getPDO()->inTransaction()) $db->getPDO()->rollBack();
                 $from->send(json_encode(['type' => 'register_failed', 'message' => 'Impossible de créer ce compte.']));
+                return;
+            } catch (Throwable $e) {
+                if (!$registrationCommitted) {
+                    if ($db->getPDO()->inTransaction()) $db->getPDO()->rollBack();
+                    $from->send(json_encode(['type' => 'register_failed', 'message' => 'Impossible de créer ce compte.']));
+                    return;
+                }
+                $this->logger->error('E-mail de validation non envoyé.', ['user_id' => $userId ?? null, 'exception' => get_class($e)]);
+                $from->send(json_encode(['type' => 'register_success', 'message' => 'Compte créé, mais l’e-mail n’a pas pu être envoyé. Utilisez le renvoi de validation.']));
                 return;
             }
     
             // Confirmation de l'enregistrement
             $from->send(json_encode([
                 'type' => 'register_success',
-                'message' => 'Enregistrement réussi. Vous pouvez vous connecter.'
+                'message' => 'Compte créé. Consultez votre e-mail pour le valider.'
             ]));
             $this->logger->info("OUT:" . json_encode([
                 'type' => 'register_success',
@@ -702,13 +750,19 @@ class MinesweeperServer implements MessageComponentInterface {
         $user = $db->getUserByUsername($username);
     
         // Vérifier si l'utilisateur existe et si le mot de passe correspond
-        if ($user && !empty($user['is_disabled'])) {
-            $attempt['count']++;
-            $this->authAttempts[$attemptKey] = $attempt;
-            $from->send(json_encode(['type' => 'login_failed', 'message' => 'Ce compte est désactivé.']));
-            return;
-        }
         if ($user && password_verify($password, $user['password_hash'])) {
+            if (!empty($user['is_disabled'])) {
+                $attempt['count']++;
+                $this->authAttempts[$attemptKey] = $attempt;
+                $from->send(json_encode(['type' => 'login_failed', 'message' => 'Ce compte est désactivé.']));
+                return;
+            }
+            if (!empty($user['email']) && empty($user['email_verified_at'])) {
+                $attempt['count']++;
+                $this->authAttempts[$attemptKey] = $attempt;
+                $from->send(json_encode(['type' => 'login_failed', 'message' => 'Validez votre adresse e-mail avant de vous connecter.']));
+                return;
+            }
             unset($this->authAttempts[$attemptKey]);
             $sessionToken = bin2hex(random_bytes(32));
             $this->authSessions[$sessionToken] = [
@@ -723,6 +777,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 'username' => $username,
                 'session_token' => $sessionToken,
             ];
+            $this->sessionValidationTimes[$from->resourceId] = time();
     
             $from->send(json_encode([
                 'type' => 'login_success',
@@ -765,7 +820,9 @@ class MinesweeperServer implements MessageComponentInterface {
             return;
         }
 
-        $session = $this->authSessions[$token] ?? $this->loadPersistedAuthSession($token);
+        // Toujours relire la session persistante : une réinitialisation de mot
+        // de passe ou une désactivation doit révoquer même un jeton en mémoire.
+        $session = $this->loadPersistedAuthSession($token);
         if (!$session || $session['expires_at'] < time()) {
             unset($this->authSessions[$token]);
             $this->deletePersistedAuthSession($token);
@@ -787,6 +844,7 @@ class MinesweeperServer implements MessageComponentInterface {
             'username' => $session['username'],
             'session_token' => $token,
         ];
+        $this->sessionValidationTimes[$from->resourceId] = time();
         $this->authSessions[$token]['expires_at'] = time() + 43200;
         $this->persistAuthSession($token, (int) $session['id'], time() + 43200);
 
@@ -882,6 +940,7 @@ class MinesweeperServer implements MessageComponentInterface {
         }
         // Retirer le joueur de la liste des joueurs connectés
         unset($this->players[$from->resourceId]);
+        unset($this->sessionValidationTimes[$from->resourceId]);
     
         // Informer les autres joueurs que la liste des joueurs disponibles a changé
         

@@ -91,3 +91,35 @@ test('la déconnexion révoque la session persistante', async () => {
   expect((await resumed).type).toBe('resume_failed');
   resumedSocket.close();
 });
+
+test('un nouveau compte doit valider son adresse avant la connexion', async () => {
+  test.skip(!wsUrl, 'WebSocket E2E non configuré');
+  const socket = await new Promise((resolve, reject) => {
+    const client = new WebSocket(wsUrl, { origin: process.env.E2E_ORIGIN || 'http://localhost' });
+    client.once('open', () => resolve(client));
+    client.once('error', reject);
+  });
+  const waitFor = expected => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Message ${expected} non reçu`)), 10000);
+    const handler = raw => {
+      const data = JSON.parse(raw);
+      if (data.type === expected) {
+        clearTimeout(timer);
+        socket.off('message', handler);
+        resolve(data);
+      }
+    };
+    socket.on('message', handler);
+  });
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  const username = `mail_${suffix}`.slice(0, 32);
+  const email = `${username}@example.test`;
+  const password = 'Email-Verification!2026';
+  const registered = waitFor('register_success');
+  socket.send(JSON.stringify({ type: 'register', username, email, password }));
+  expect((await registered).message).toMatch(/e-mail/i);
+  const refused = waitFor('login_failed');
+  socket.send(JSON.stringify({ type: 'login', username, password }));
+  expect((await refused).message).toMatch(/Validez votre adresse/);
+  socket.close();
+});

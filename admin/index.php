@@ -63,6 +63,7 @@ try {
         <p><strong>Sauvegarde :</strong> <span id="backup-status">Vérification...</span> — <strong>Test de restauration :</strong> <span id="restore-status">Vérification...</span></p>
         <p><strong>Dernière sauvegarde :</strong> <span id="last-backup">Jamais</span> — <strong>Dernière restauration testée :</strong> <span id="last-restore">Jamais</span></p>
         <p><strong>Supervision :</strong> <span id="health-status">Vérification...</span></p>
+        <p><strong>Envoi des e-mails :</strong> <span id="mail-status">Vérification...</span></p>
         <p><strong>Usage CPU :</strong> <span id="cpu-usage">Calcul...</span>%</p>
         <p><strong>Usage Mémoire :</strong> <span id="memory-usage">Calcul...</span>%</p>
     </div>

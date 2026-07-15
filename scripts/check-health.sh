@@ -3,6 +3,18 @@ set -euo pipefail
 
 status_dir="${STATUS_DIR:-/var/log/minesweeper}"
 issues=()
+env_file="${SECURE_DIR:-/var/www/secure}/minesweeper-service.env"
+if [[ -r "$env_file" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$env_file"
+  set +a
+fi
+[[ -n "${MAILER_DSN:-}" && -n "${MAIL_FROM_ADDRESS:-}" && -n "${APP_PUBLIC_URL:-}" ]] || issues+=("SMTP non configuré")
+if [[ -n "${DB_HOST:-}" && -n "${DB_USER:-}" && -n "${DB_PASS:-}" ]]; then
+  failed_mails=$(MYSQL_PWD="$DB_PASS" mysql -N -B -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" -e "SELECT IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='email_outbox'),(SELECT COUNT(*) FROM email_outbox WHERE sent_at IS NULL AND attempts>=10),0)" 2>/dev/null || echo 0)
+  [[ "$failed_mails" =~ ^[0-9]+$ && "$failed_mails" -eq 0 ]] || issues+=("e-mails en échec")
+fi
 for unit in minesweeper-websocket.service minesweeper-backup.timer minesweeper-backup-verify.timer; do
   systemctl is-active --quiet "$unit" || issues+=("$unit inactif")
 done

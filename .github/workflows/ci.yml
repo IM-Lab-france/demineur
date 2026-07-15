@@ -37,6 +37,10 @@ jobs:
       E2E_ADMIN_USER: e2e_admin
       E2E_ADMIN_PASSWORD: E2e-Admin-Password!2026
       APP_TOTP_KEY: S0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0s=
+      MAILER_DSN: null://null
+      MAIL_FROM_ADDRESS: no-reply@example.test
+      MAIL_FROM_NAME: Demineur CI
+      APP_PUBLIC_URL: http://127.0.0.1:8099
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -50,12 +54,15 @@ jobs:
       - run: composer install --no-interaction --prefer-dist
       - run: composer audit --no-interaction
       - run: mysql -h 127.0.0.1 -uroot -proot demineur < install/install.sql
+      - run: mysql -h 127.0.0.1 -uroot -proot demineur < install/migrations/20260715_email_accounts.sql && mysql -h 127.0.0.1 -uroot -proot demineur < install/migrations/20260715_email_accounts.sql
       - run: php tests/provision_e2e.php
       - run: php tests/auth_session_repository_test.php
       - run: php tests/server_unit.php
       - run: php tests/game_outcome_test.php
       - run: php tests/admin_security_test.php
       - run: php tests/admin_login_throttle_test.php
+      - run: php tests/account_tokens_test.php
+      - run: php scripts/process-mail-queue.php
       - run: php -l server.php && php -l index.php
       - run: node --check script.js && node --check scores.js
       - run: bash -n scripts/*.sh

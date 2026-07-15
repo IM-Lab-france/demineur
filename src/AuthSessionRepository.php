@@ -15,13 +15,13 @@ final class AuthSessionRepository {
 
     public function findValid(string $token): ?array {
         $stmt = $this->pdo->prepare(
-            'SELECT u.id, u.username, u.is_disabled, UNIX_TIMESTAMP(s.expires_at) AS expires_at '
+            'SELECT u.id, u.username, u.is_disabled, u.email, u.email_verified_at, UNIX_TIMESTAMP(s.expires_at) AS expires_at '
             . 'FROM auth_sessions s JOIN users u ON u.id=s.user_id '
             . 'WHERE s.token_hash=:hash AND s.expires_at >= CURRENT_TIMESTAMP LIMIT 1'
         );
         $stmt->execute(['hash' => $this->hash($token)]);
         $session = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$session || !empty($session['is_disabled'])) return null;
+        if (!$session || !empty($session['is_disabled']) || (!empty($session['email']) && empty($session['email_verified_at']))) return null;
         return ['id' => (int) $session['id'], 'username' => (string) $session['username'], 'expires_at' => (int) $session['expires_at']];
     }
 

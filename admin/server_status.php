@@ -36,6 +36,20 @@ function readOperationalStatus(string $path): ?array {
 }
 
 $runtime = getRuntimeStatus();
+$mailConfigured = false;
+$mailQueuePending = 0;
+$mailQueueFailed = 0;
+try {
+    $statusPdo = (new Database())->getPDO(); // Charge également la configuration sécurisée.
+    new MailService();
+    $mailConfigured = true;
+    if ($statusPdo->query("SHOW TABLES LIKE 'email_outbox'")->fetchColumn()) {
+        $mailQueuePending = (int) $statusPdo->query('SELECT COUNT(*) FROM email_outbox WHERE sent_at IS NULL AND attempts<10')->fetchColumn();
+        $mailQueueFailed = (int) $statusPdo->query('SELECT COUNT(*) FROM email_outbox WHERE sent_at IS NULL AND attempts>=10')->fetchColumn();
+    }
+} catch (Throwable $e) {
+    $mailConfigured = false;
+}
 $status = [
     'server' => isServerRunning() ? 'online' : 'offline',
     'connectedPlayers' => $runtime['authenticatedPlayers'] ?? 0,
@@ -53,6 +67,9 @@ $status = [
     'lastBackup' => readOperationalStatus('/var/log/minesweeper/backup-status.json'),
     'lastRestoreTest' => readOperationalStatus('/var/log/minesweeper/restore-status.json'),
     'health' => readOperationalStatus('/var/log/minesweeper/health-status.json'),
+    'mailConfigured' => $mailConfigured,
+    'mailQueuePending' => $mailQueuePending,
+    'mailQueueFailed' => $mailQueueFailed,
 ];
 
 echo json_encode($status);

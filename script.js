@@ -244,9 +244,8 @@ function connectWebSocket() {
                 break;
 
             case 'register_success':
-                registerError.textContent = 'Compte créé avec succès ! Vous pouvez maintenant vous connecter.';
-                // Afficher le bouton de connexion
-                document.getElementById('creationOk').textContent = "Compte créé avec succès. Vous pouvez vous connecter !"
+                registerError.textContent = '';
+                document.getElementById('creationOk').textContent = data.message || 'Compte créé. Consultez votre e-mail pour le valider.';
                 showLoginModal();
                 break;
 
@@ -683,13 +682,6 @@ function updateGameStatus(board, mineCount, currentPlayer) {
 }
 
 
-async function handleRegister() {
-    const username = document.getElementById('registerUsername').value;
-    const password = document.getElementById('registerPassword').value;
-    await sendRegister(username, password);
-    console.log('Tentative de création de compte pour ' + username);
-}
-
 // Fonction pour vider le plateau de jeu
 function clearGameBoard() {
     const gameBoardDiv = document.getElementById('gameBoard');
@@ -785,11 +777,12 @@ async function sendLogin(username, password) {
     }));
 }
 
-async function sendRegister(username, password) {
+async function sendRegister(username, email, password) {
     socket.send(JSON.stringify({
         type: 'register',
         username: username,
-        password: password // Envoi du mot de passe crypté
+        email: email,
+        password: password // Transporté uniquement via le WebSocket TLS en production
     }));
 }
 
@@ -816,8 +809,14 @@ loginBtn.addEventListener('click', async () => {
 // Gestion de la création de compte
 registerBtn.addEventListener('click', async () => {
     const username = document.getElementById('registerUsername').value;
+    const email = document.getElementById('registerEmail').value;
     const password = document.getElementById('registerPassword').value;
-    await sendRegister(username, password); // Fonction existante pour envoyer les infos de création de compte
+    const confirmation = document.getElementById('registerPasswordConfirmation').value;
+    if (password !== confirmation) {
+        registerError.textContent = 'Les mots de passe ne correspondent pas.';
+        return;
+    }
+    await sendRegister(username, email, password);
     console.log('Tentative de création de compte pour ' + username);
 });
 

@@ -99,6 +99,29 @@ et par couple adresse/compte. Cinq échecs dans une fenêtre de quinze minutes
 bloquent les nouvelles tentatives pendant quinze minutes, même si les cookies
 du navigateur sont supprimés.
 
+## Validation des comptes par e-mail
+
+Les nouveaux joueurs doivent valider leur adresse avant la première connexion.
+Les liens de validation expirent après 24 heures. Les liens de réinitialisation
+du mot de passe expirent après 30 minutes et révoquent les sessions persistantes.
+Les jetons sont aléatoires, à usage unique et uniquement stockés sous forme de
+hash SHA-256.
+
+Configurer le serveur SMTP avec :
+
+```bash
+sudo /var/www/demineur/scripts/configure-mail.sh
+```
+
+Le mot de passe présent dans le DSN SMTP doit être encodé pour une URL
+(`@` devient `%40`, par exemple). Les pages publiques sont
+`/verify-email.php`, `/resend-verification.php`, `/forgot-password.php` et
+`/reset-password.php`. Les réponses de récupération ne révèlent jamais si une
+adresse existe.
+
+Configurer SPF, DKIM et DMARC pour le domaine d’expédition avant une ouverture
+publique, puis tester le parcours avec une adresse réelle.
+
 ## Supervision et copie hors serveur
 
 `minesweeper-health.timer` contrôle chaque heure le backend, les timers et l’âge

@@ -1,0 +1,10 @@
+[Unit]
+Description=Traitement périodique des e-mails du Démineur
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

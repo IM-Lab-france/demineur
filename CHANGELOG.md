@@ -21,6 +21,8 @@
 - One-time MFA recovery codes and encrypted per-administrator TOTP secrets.
 - Persistent database-backed throttling for administration logins.
 - Hourly systemd health checks surfaced in the administration dashboard.
+- Verified e-mail registration, verification resend and secure password recovery.
+- Hashed, expiring and single-use account tokens with session revocation.
 
 ### Changed
 
@@ -34,6 +36,7 @@
 - Differentiated easy, medium and hard AI behavior with a decision timeout.
 - Unified Apache/PHP and systemd database configuration after secret rotation.
 - Extracted administration login throttling into a dedicated repository component.
+- Added SMTP health visibility and a guided secure mail configuration command.
 
 ### Security
 

@@ -28,6 +28,8 @@ backup_verify_timer_source="$project_dir/deploy/systemd/minesweeper-backup-verif
 ai_service_source="$project_dir/deploy/systemd/minesweeper-ai@.service"
 health_service_source="$project_dir/deploy/systemd/minesweeper-health.service"
 health_timer_source="$project_dir/deploy/systemd/minesweeper-health.timer"
+mail_service_source="$project_dir/deploy/systemd/minesweeper-mail.service"
+mail_timer_source="$project_dir/deploy/systemd/minesweeper-mail.timer"
 
 [[ -f "$service_source" ]] || { echo "Unité absente: $service_source" >&2; exit 1; }
 [[ -f "$config_env" ]] || { echo "Configuration absente dans $secure_dir" >&2; exit 1; }
@@ -82,6 +84,9 @@ fi
 if [[ -f "$project_dir/install/migrations/20260715_admin_login_throttle.sql" ]]; then
     MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260715_admin_login_throttle.sql"
 fi
+if [[ -f "$project_dir/install/migrations/20260715_email_accounts.sql" ]]; then
+    MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260715_email_accounts.sql"
+fi
 if [[ ! -f "$secure_dir/ia_accounts.json" && -f "$legacy_ia_accounts" ]]; then
     install -o root -g minesweeper -m 0640 "$legacy_ia_accounts" "$secure_dir/ia_accounts.json"
     rm -f "$legacy_ia_accounts"
@@ -102,6 +107,8 @@ install -o root -g root -m 0644 "$backup_verify_service_source" /etc/systemd/sys
 install -o root -g root -m 0644 "$backup_verify_timer_source" /etc/systemd/system/minesweeper-backup-verify.timer
 install -o root -g root -m 0644 "$health_service_source" /etc/systemd/system/minesweeper-health.service
 install -o root -g root -m 0644 "$health_timer_source" /etc/systemd/system/minesweeper-health.timer
+install -o root -g root -m 0644 "$mail_service_source" /etc/systemd/system/minesweeper-mail.service
+install -o root -g root -m 0644 "$mail_timer_source" /etc/systemd/system/minesweeper-mail.timer
 install -o root -g root -m 0644 "$ai_service_source" /etc/systemd/system/minesweeper-ai@.service
 
 sudoers_tmp=$(mktemp)
@@ -117,6 +124,7 @@ systemctl enable "$service_name"
 systemctl enable --now minesweeper-backup.timer
 systemctl enable --now minesweeper-backup-verify.timer
 systemctl enable --now minesweeper-health.timer
+systemctl enable --now minesweeper-mail.timer
 systemctl restart "$service_name"
 a2enmod proxy proxy_http proxy_wstunnel headers expires rewrite
 a2enconf minesweeper-websocket minesweeper-security
