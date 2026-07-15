@@ -14,7 +14,9 @@ function start_public_account_session(): void {
     $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || $forwardedProto === 'https';
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
-    session_set_cookie_params(['httponly' => true, 'secure' => $secure, 'samesite' => 'Strict', 'path' => '/']);
+    // Lax permet de conserver le résultat après une arrivée depuis le lien de
+    // suivi d'un fournisseur d'e-mail, tout en bloquant les requêtes POST tierces.
+    session_set_cookie_params(['httponly' => true, 'secure' => $secure, 'samesite' => 'Lax', 'path' => '/']);
     session_start();
 }
 

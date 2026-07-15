@@ -4,15 +4,35 @@ set -euo pipefail
 if [[ ${EUID:-$(id -u)} -ne 0 ]]; then echo "Exécutez avec sudo." >&2; exit 1; fi
 secure_dir="${SECURE_DIR:-/var/www/secure}"
 service_env="$secure_dir/minesweeper-service.env"
+smtp_host="smtp-relay.brevo.com"
+smtp_port="587"
+smtp_login="b220fa001@smtp-brevo.com"
 [[ -r "$service_env" ]] || { echo "Configuration absente: $service_env" >&2; exit 1; }
 
-read -r -p "Adresse d’expédition (ex: no-reply@fozzy.fr) : " from_address
+uri_encode() {
+    local input=$1 output="" char hex i
+    LC_ALL=C
+    for ((i = 0; i < ${#input}; i++)); do
+        char=${input:i:1}
+        case "$char" in
+            [a-zA-Z0-9.~_-]) output+="$char" ;;
+            *) printf -v hex '%%%02X' "'$char"; output+="$hex" ;;
+        esac
+    done
+    printf '%s' "$output"
+}
+
+read -r -p "Adresse d’expédition [no-reply@fozzy.fr] : " from_address
+from_address=${from_address:-no-reply@fozzy.fr}
 read -r -p "Nom d’expédition [Démineur] : " from_name
 from_name=${from_name:-Démineur}
 read -r -p "URL publique [https://demineur.fozzy.fr] : " public_url
 public_url=${public_url:-https://demineur.fozzy.fr}
-read -r -s -p "DSN SMTP (ex: smtp://utilisateur:motdepasse@smtp.exemple.fr:587) : " mailer_dsn
+printf 'Serveur SMTP Brevo : %s:%s\nIdentifiant SMTP : %s\n' "$smtp_host" "$smtp_port" "$smtp_login"
+read -r -s -p "Clé SMTP Brevo : " smtp_password
 echo
+[[ -n "$smtp_password" ]] || { echo "La clé SMTP ne peut pas être vide." >&2; exit 2; }
+mailer_dsn="smtp://$(uri_encode "$smtp_login"):$(uri_encode "$smtp_password")@${smtp_host}:${smtp_port}"
 
 [[ "$from_address" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || { echo "Adresse invalide." >&2; exit 2; }
 [[ "$public_url" =~ ^https://[^[:space:]]+$ ]] || { echo "L’URL publique doit utiliser HTTPS." >&2; exit 2; }

@@ -20,11 +20,13 @@ $userId = (int) $pdo->lastInsertId();
 $tokens = new AccountTokenService($pdo);
 try {
     $verification = $tokens->issue($userId, 'verify_email', 3600);
+    $secondVerification = $tokens->issue($userId, 'verify_email', 3600);
     assert_account(strlen($verification) === 64, 'Le jeton brut doit avoir 256 bits.');
     $stored = $pdo->query('SELECT token_hash FROM account_tokens WHERE user_id=' . $userId)->fetchColumn();
     assert_account($stored === hash('sha256', $verification) && $stored !== $verification, 'Seul le hash du jeton doit être stocké.');
     assert_account($tokens->verifyEmail($verification), 'Le jeton doit valider l’adresse.');
-    assert_account(!$tokens->verifyEmail($verification), 'Le jeton de validation doit être à usage unique.');
+    assert_account($tokens->verifyEmail($verification), 'Une seconde ouverture doit confirmer une validation déjà effectuée sans la rejouer.');
+    assert_account($tokens->verifyEmail($secondVerification), 'Les autres liens du compte doivent afficher que la validation est déjà effectuée.');
 
     $sessionToken = bin2hex(random_bytes(32));
     (new AuthSessionRepository($pdo))->save($sessionToken, $userId, time() + 3600);

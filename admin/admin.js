@@ -220,4 +220,24 @@ $(document).ready(function(){
             .done(response => { showMessage('success', response.message); window.setTimeout(() => location.reload(), 500); })
             .fail(xhr => showMessage('danger', xhr.responseJSON?.message || 'Modification impossible.'));
     });
+    $('.delete-player').click(function() {
+        const button = $(this);
+        const username = String(button.data('username'));
+        const confirmation = window.prompt(`Cette action est définitive, supprimera toutes les données de ${username} et redémarrera brièvement le serveur.\n\nPour confirmer, saisissez exactement : ${username}`);
+        if (confirmation === null) return;
+        if (confirmation !== username) {
+            showMessage('warning', 'Le nom saisi ne correspond pas. Suppression annulée.');
+            return;
+        }
+        button.prop('disabled', true);
+        $.post('/admin/delete_player.php', {player_id: button.data('player'), confirmation})
+            .done(response => {
+                showMessage('success', response.message);
+                window.setTimeout(() => location.reload(), 700);
+            })
+            .fail(xhr => {
+                button.prop('disabled', false);
+                showMessage('danger', xhr.responseJSON?.message || 'Suppression impossible.');
+            });
+    });
 });

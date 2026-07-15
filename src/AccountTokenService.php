@@ -10,14 +10,20 @@ final class AccountTokenService {
         $ownsTransaction = !$this->pdo->inTransaction();
         if ($ownsTransaction) $this->pdo->beginTransaction();
         try {
-            $delete = $this->pdo->prepare('DELETE FROM account_tokens WHERE user_id=:user_id AND purpose=:purpose');
-            $delete->execute(['user_id' => $userId, 'purpose' => $purpose]);
+            if ($purpose === 'reset_password') {
+                $delete = $this->pdo->prepare('DELETE FROM account_tokens WHERE user_id=:user_id AND purpose=:purpose');
+                $delete->execute(['user_id' => $userId, 'purpose' => $purpose]);
+            } else {
+                $delete = $this->pdo->prepare('DELETE FROM account_tokens WHERE user_id=:user_id AND purpose=:purpose AND expires_at<CURRENT_TIMESTAMP');
+                $delete->execute(['user_id' => $userId, 'purpose' => $purpose]);
+            }
             $insert = $this->pdo->prepare(
                 'INSERT INTO account_tokens(token_hash,user_id,purpose,expires_at) '
                 . 'VALUES(:hash,:user_id,:purpose,FROM_UNIXTIME(:expires_at))'
             );
             $insert->execute(['hash' => hash('sha256', $token), 'user_id' => $userId, 'purpose' => $purpose, 'expires_at' => time() + $lifetime]);
             if ($ownsTransaction) $this->pdo->commit();
+            error_log(sprintf('account_token_issued purpose=%s user=%d ref=%s', $purpose, $userId, substr(hash('sha256', $token), 0, 12)));
             if (random_int(1, 100) === 1) $this->purgeExpired();
             return $token;
         } catch (Throwable $e) {
@@ -35,12 +41,31 @@ final class AccountTokenService {
         );
         $stmt->execute(['hash' => hash('sha256', $token), 'purpose' => $purpose]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            $diagnostic = $this->pdo->prepare(
+                'SELECT purpose,used_at IS NOT NULL AS is_used,expires_at<CURRENT_TIMESTAMP AS is_expired '
+                . 'FROM account_tokens WHERE token_hash=:hash LIMIT 1'
+            );
+            $diagnostic->execute(['hash' => hash('sha256', $token)]);
+            $state = $diagnostic->fetch(PDO::FETCH_ASSOC);
+            $reason = !$state ? 'absent' : ((string) $state['purpose'] !== $purpose ? 'wrong_purpose' : ((int) $state['is_used'] === 1 ? 'used' : ((int) $state['is_expired'] === 1 ? 'expired' : 'unknown')));
+            error_log('account_token_lookup_miss purpose=' . $purpose . ' reason=' . $reason . ' ref=' . substr(hash('sha256', $token), 0, 12));
+        }
         return $row ?: null;
     }
 
     public function verifyEmail(string $token): bool {
         $account = $this->find($token, 'verify_email');
-        if (!$account) return false;
+        if (!$account) {
+            if (!preg_match('/^[a-f0-9]{64}$/', $token)) return false;
+            $verified = $this->pdo->prepare(
+                "SELECT 1 FROM account_tokens t JOIN users u ON u.id=t.user_id "
+                . "WHERE t.token_hash=:hash AND t.purpose='verify_email' AND t.used_at IS NOT NULL "
+                . "AND u.email_verified_at IS NOT NULL LIMIT 1"
+            );
+            $verified->execute(['hash' => hash('sha256', $token)]);
+            return (bool) $verified->fetchColumn();
+        }
         $this->pdo->beginTransaction();
         try {
             $consume = $this->pdo->prepare('UPDATE account_tokens SET used_at=CURRENT_TIMESTAMP WHERE id=:id AND used_at IS NULL');
@@ -51,6 +76,8 @@ final class AccountTokenService {
             }
             $update = $this->pdo->prepare('UPDATE users SET email_verified_at=CURRENT_TIMESTAMP WHERE id=:id');
             $update->execute(['id' => $account['id']]);
+            $invalidate = $this->pdo->prepare("UPDATE account_tokens SET used_at=CURRENT_TIMESTAMP WHERE user_id=:id AND purpose='verify_email' AND used_at IS NULL");
+            $invalidate->execute(['id' => $account['id']]);
             $this->pdo->commit();
             return true;
         } catch (Throwable $e) {

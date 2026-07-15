@@ -35,14 +35,32 @@ final class MailQueueRepository {
         $stmt->execute(['id' => $id]);
     }
 
-    public function markFailed(int $id, int $attempts, string $errorClass): void {
+    public function markFailed(int $id, int $attempts, string $diagnostic): void {
         $delay = min(3600, 30 * (2 ** min(7, $attempts)));
         $stmt = $this->pdo->prepare('UPDATE email_outbox SET attempts=attempts+1,last_error=:error,next_attempt_at=FROM_UNIXTIME(:next) WHERE id=:id AND sent_at IS NULL');
-        $stmt->execute(['error' => substr($errorClass, 0, 190), 'next' => time() + $delay, 'id' => $id]);
+        $stmt->execute(['error' => substr($diagnostic, 0, 190), 'next' => time() + $delay, 'id' => $id]);
     }
 
     public function purge(): int {
         return $this->pdo->exec('DELETE FROM email_outbox WHERE sent_at<CURRENT_TIMESTAMP - INTERVAL 7 DAY');
+    }
+
+    public function purgeForIdentity(string $recipient, string $username): int {
+        $rows = $this->pdo->query('SELECT id,payload_encrypted FROM email_outbox')->fetchAll(PDO::FETCH_ASSOC);
+        $delete = $this->pdo->prepare('DELETE FROM email_outbox WHERE id=:id');
+        $deleted = 0;
+        foreach ($rows as $row) {
+            $payload = $this->decode($row);
+            if (
+                strcasecmp((string) ($payload['recipient'] ?? ''), $recipient) !== 0
+                && (string) ($payload['username'] ?? '') !== $username
+            ) {
+                continue;
+            }
+            $delete->execute(['id' => (int) $row['id']]);
+            $deleted += $delete->rowCount();
+        }
+        return $deleted;
     }
 
     private function key(): string {

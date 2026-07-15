@@ -9,7 +9,7 @@ try {
     $columns = $db->getPDO()->query("SHOW COLUMNS FROM users LIKE 'is_disabled'")->fetchAll(PDO::FETCH_ASSOC);
     $playerBlockingAvailable = count($columns) > 0;
     $players = $db->getPDO()->query(
-        'SELECT id, username, games_played, games_won, games_draw' . ($playerBlockingAvailable ? ', is_disabled' : ', 0 AS is_disabled') . ' FROM users ORDER BY username'
+        'SELECT id, username, games_played, games_won, games_draw, is_admin, is_ai' . ($playerBlockingAvailable ? ', is_disabled' : ', 0 AS is_disabled') . ' FROM users ORDER BY username'
     )->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
     // Le panneau de contrôle du service reste accessible si MySQL est indisponible.
@@ -103,15 +103,21 @@ try {
     <section class="card mt-4">
         <div class="card-body">
             <h2 class="h4">Gestion des comptes</h2>
+            <p class="text-muted">La suppression efface définitivement le compte, ses sessions, ses e-mails en attente et tout son historique de jeu.</p>
+            <div class="alert alert-warning py-2">La suppression redémarre brièvement le serveur et déconnecte les joueurs. Les administrateurs et les IA se gèrent depuis leurs interfaces dédiées.</div>
             <?php if (!$playerBlockingAvailable): ?>
                 <div class="alert alert-warning">Appliquez la migration <code>install/migrations/20260715_admin_players.sql</code> pour activer cette fonction.</div>
             <?php else: ?>
                 <div class="table-responsive"><table class="table table-sm align-middle">
-                    <thead><tr><th>Joueur</th><th>État</th><th class="text-end">Action</th></tr></thead>
+                    <thead><tr><th>Joueur</th><th>Type</th><th>État</th><th class="text-end">Actions</th></tr></thead>
                     <tbody><?php foreach ($players as $player): ?><tr>
                         <td><?= htmlspecialchars($player['username'], ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= $player['is_admin'] ? 'Administrateur' : ($player['is_ai'] ? 'IA' : 'Joueur') ?></td>
                         <td><?= $player['is_disabled'] ? '<span class="badge bg-danger">Désactivé</span>' : '<span class="badge bg-success">Actif</span>' ?></td>
-                        <td class="text-end"><button class="btn btn-sm <?= $player['is_disabled'] ? 'btn-outline-success' : 'btn-outline-danger' ?> toggle-player" data-player="<?= (int) $player['id'] ?>" data-disabled="<?= $player['is_disabled'] ? '0' : '1' ?>"><?= $player['is_disabled'] ? 'Réactiver' : 'Désactiver' ?></button></td>
+                        <td class="text-end">
+                            <?php if (!$player['is_admin']): ?><button class="btn btn-sm <?= $player['is_disabled'] ? 'btn-outline-success' : 'btn-outline-secondary' ?> toggle-player" data-player="<?= (int) $player['id'] ?>" data-disabled="<?= $player['is_disabled'] ? '0' : '1' ?>"><?= $player['is_disabled'] ? 'Réactiver' : 'Désactiver' ?></button><?php endif; ?>
+                            <?php if (!$player['is_admin'] && !$player['is_ai']): ?><button class="btn btn-sm btn-danger delete-player ms-1" data-player="<?= (int) $player['id'] ?>" data-username="<?= htmlspecialchars($player['username'], ENT_QUOTES, 'UTF-8') ?>">Supprimer</button><?php endif; ?>
+                        </td>
                     </tr><?php endforeach; ?></tbody>
                 </table></div>
             <?php endif; ?>

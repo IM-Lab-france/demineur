@@ -24,11 +24,12 @@ final class MailService {
 
     public function sendVerification(string $recipient, string $username, string $token): void {
         $url = $this->publicUrl . '/verify-email.php?token=' . rawurlencode($token);
+        $requestCode = strtoupper(substr(hash('sha256', $token), 0, 8));
         $this->send(
             $recipient,
-            'Validez votre compte Démineur',
-            "Bonjour {$username},\n\nValidez votre compte en ouvrant ce lien, valable 24 heures :\n{$url}\n\nSi vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail.",
-            '<p>Bonjour ' . htmlspecialchars($username, ENT_QUOTES, 'UTF-8') . ',</p><p>Validez votre compte en cliquant sur ce lien, valable 24 heures :</p><p><a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">Valider mon adresse e-mail</a></p><p>Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail.</p>'
+            'Validation Démineur — demande ' . $requestCode,
+            "Bonjour {$username},\n\nCode de cette demande : {$requestCode}\n\nValidez votre compte en ouvrant ce lien, valable 24 heures :\n{$url}\n\nUtilisez uniquement le message le plus récent. Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail.",
+            '<p>Bonjour ' . htmlspecialchars($username, ENT_QUOTES, 'UTF-8') . ',</p><p><strong>Code de cette demande : ' . $requestCode . '</strong></p><p>Validez votre compte en cliquant sur ce lien, valable 24 heures :</p><p><a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">Valider mon adresse e-mail</a></p><p>Utilisez uniquement le message le plus récent. Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail.</p>'
         );
     }
 
