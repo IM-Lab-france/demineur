@@ -54,6 +54,7 @@ $(document).ready(function(){
                 // Mettre à jour le statut du serveur
                 $('#server-status').text(serverIsOnline ? 'En ligne' : 'Hors ligne');
                 $('#server-status').removeClass('text-success text-danger').addClass(serverIsOnline ? 'text-success' : 'text-danger');
+                $('#server-card').toggleClass('state-ok', serverIsOnline).toggleClass('state-error', !serverIsOnline);
                 $('#connected-players').text(response.connectedPlayers);
                 $('#active-games').text(response.activeGames || 0);
                 $('#pending-reconnects').text(response.pendingReconnects || 0);
@@ -61,13 +62,16 @@ $(document).ready(function(){
                 $('#websocket-errors').text(response.websocketErrors || 0);
                 $('#backup-status').text(response.backupTimer === 'active' ? 'planifiée' : 'inactive');
                 $('#restore-status').text(response.restoreTestTimer === 'active' ? 'planifié' : 'inactif');
-                $('#last-backup').text(response.lastBackup?.completedAt || 'Jamais').toggleClass('text-danger', !response.lastBackup || response.lastBackup.ageSeconds > 129600);
-                $('#last-restore').text(response.lastRestoreTest?.completedAt || 'Jamais').toggleClass('text-danger', !response.lastRestoreTest || response.lastRestoreTest.ageSeconds > 691200);
+                const displayDate = value => value ? new Date(value).toLocaleString('fr-FR', {dateStyle: 'short', timeStyle: 'short'}) : 'Jamais';
+                $('#last-backup').text(displayDate(response.lastBackup?.completedAt)).toggleClass('text-danger', !response.lastBackup || response.lastBackup.ageSeconds > 129600);
+                $('#last-restore').text(displayDate(response.lastRestoreTest?.completedAt)).toggleClass('text-danger', !response.lastRestoreTest || response.lastRestoreTest.ageSeconds > 691200);
                 const healthOk = response.health?.status === 'success';
                 $('#health-status').text(response.health?.message || 'Aucun contrôle').toggleClass('text-success', healthOk).toggleClass('text-danger', !healthOk);
+                $('#health-card').toggleClass('state-ok', healthOk).toggleClass('state-error', !healthOk);
                 const mailHealthy = response.mailConfigured && Number(response.mailQueueFailed || 0) === 0;
                 const mailLabel = response.mailConfigured ? `configuré — ${response.mailQueuePending || 0} en attente, ${response.mailQueueFailed || 0} en échec` : 'non configuré';
                 $('#mail-status').text(mailLabel).toggleClass('text-success', mailHealthy).toggleClass('text-danger', !mailHealthy);
+                $('#mail-card').toggleClass('state-ok', mailHealthy).toggleClass('state-error', !mailHealthy);
 
                 // Activer/désactiver les boutons en fonction de l'état du serveur
                 $('#start-button').prop('disabled', serverIsOnline);
@@ -92,8 +96,12 @@ $(document).ready(function(){
             method: 'GET',
             dataType: 'json',
             success: function(response) {
-                $('#cpu-usage').text(response.cpu !== 'N/A' ? response.cpu.toFixed(1) : 'N/A');
-                $('#memory-usage').text(response.memory !== 'N/A' ? response.memory.toFixed(1) : 'N/A');
+                const cpu = response.cpu !== 'N/A' ? Number(response.cpu) : null;
+                const memory = response.memory !== 'N/A' ? Number(response.memory) : null;
+                $('#cpu-usage').text(cpu !== null ? cpu.toFixed(1) : 'N/A');
+                $('#memory-usage').text(memory !== null ? memory.toFixed(1) : 'N/A');
+                $('#cpu-bar').css('width', `${Math.max(0, Math.min(100, cpu || 0))}%`);
+                $('#memory-bar').css('width', `${Math.max(0, Math.min(100, memory || 0))}%`);
             },
             error: function() {
                 $('#cpu-usage').text('Erreur');

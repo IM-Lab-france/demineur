@@ -53,25 +53,57 @@ try {
     </div>
 </nav>
 <div class="container">
-    <h1 class="text-center">Interface d'Administration du Serveur Démineur</h1>
-    
-    <div class="status text-center">
-        <p><strong>Statut du Serveur :</strong> <span id="server-status">Vérification...</span></p>
-        <p><strong>Joueurs Connectés :</strong> <span id="connected-players">0</span></p>
-        <p><strong>Parties actives :</strong> <span id="active-games">0</span> — <strong>Reconnexions :</strong> <span id="pending-reconnects">0</span></p>
-        <p><strong>Latence SQL moyenne :</strong> <span id="move-sql-latency">0</span> ms — <strong>Erreurs WebSocket :</strong> <span id="websocket-errors">0</span></p>
-        <p><strong>Sauvegarde :</strong> <span id="backup-status">Vérification...</span> — <strong>Test de restauration :</strong> <span id="restore-status">Vérification...</span></p>
-        <p><strong>Dernière sauvegarde :</strong> <span id="last-backup">Jamais</span> — <strong>Dernière restauration testée :</strong> <span id="last-restore">Jamais</span></p>
-        <p><strong>Supervision :</strong> <span id="health-status">Vérification...</span></p>
-        <p><strong>Envoi des e-mails :</strong> <span id="mail-status">Vérification...</span></p>
-        <p><strong>Usage CPU :</strong> <span id="cpu-usage">Calcul...</span>%</p>
-        <p><strong>Usage Mémoire :</strong> <span id="memory-usage">Calcul...</span>%</p>
-    </div>
-    
-    <div class="d-flex justify-content-center gap-3">
-        <button id="start-button" class="btn btn-success">Démarrer le Serveur</button>
-        <button id="stop-button" class="btn btn-danger">Arrêter le Serveur</button>
-    </div>
+    <header class="admin-heading">
+        <p class="admin-kicker">Centre de contrôle</p>
+        <h1>Administration du Démineur</h1>
+        <p>État des services et opérations essentielles en temps réel.</p>
+    </header>
+
+    <section class="dashboard-grid" aria-label="État du serveur">
+        <article id="server-card" class="dashboard-card dashboard-card-primary">
+            <div class="card-icon" aria-hidden="true">●</div>
+            <div><p class="dashboard-label">Serveur de jeu</p><p id="server-status" class="dashboard-value">Vérification…</p></div>
+            <div class="server-actions">
+                <button id="start-button" class="btn btn-sm btn-success">Démarrer</button>
+                <button id="stop-button" class="btn btn-sm btn-danger">Arrêter</button>
+            </div>
+        </article>
+        <article class="dashboard-card">
+            <p class="dashboard-label">Joueurs connectés</p>
+            <p id="connected-players" class="dashboard-number">0</p>
+            <p class="dashboard-detail">présents actuellement</p>
+        </article>
+        <article class="dashboard-card">
+            <p class="dashboard-label">Parties</p>
+            <p class="dashboard-number"><span id="active-games">0</span></p>
+            <p class="dashboard-detail"><span id="pending-reconnects">0</span> reconnexion(s)</p>
+        </article>
+        <article class="dashboard-card">
+            <p class="dashboard-label">Performances</p>
+            <p class="dashboard-value"><span id="move-sql-latency">0</span> ms SQL</p>
+            <p class="dashboard-detail"><span id="websocket-errors">0</span> erreur(s) WebSocket</p>
+        </article>
+        <article class="dashboard-card dashboard-card-wide">
+            <p class="dashboard-label">Sauvegardes automatiques</p>
+            <div class="dashboard-split"><div><span class="mini-label">Planification</span><strong id="backup-status">Vérification…</strong></div><div><span class="mini-label">Test</span><strong id="restore-status">Vérification…</strong></div></div>
+            <div class="dashboard-dates"><span>Dernière : <strong id="last-backup">Jamais</strong></span><span>Testée : <strong id="last-restore">Jamais</strong></span></div>
+        </article>
+        <article id="health-card" class="dashboard-card dashboard-card-wide">
+            <p class="dashboard-label">Supervision</p>
+            <p id="health-status" class="dashboard-value dashboard-value-small">Vérification…</p>
+            <p class="dashboard-detail">contrôle global de l’application</p>
+        </article>
+        <article id="mail-card" class="dashboard-card dashboard-card-wide">
+            <p class="dashboard-label">E-mails transactionnels</p>
+            <p id="mail-status" class="dashboard-value dashboard-value-small">Vérification…</p>
+            <p class="dashboard-detail">validation et récupération des comptes</p>
+        </article>
+        <article class="dashboard-card dashboard-card-wide">
+            <p class="dashboard-label">Ressources du serveur</p>
+            <div class="resource-row"><span>CPU</span><div class="resource-track"><span id="cpu-bar"></span></div><strong><span id="cpu-usage">0</span>%</strong></div>
+            <div class="resource-row"><span>Mémoire</span><div class="resource-track"><span id="memory-bar"></span></div><strong><span id="memory-usage">0</span>%</strong></div>
+        </article>
+    </section>
 
     <section class="card mt-5">
         <div class="card-body">
