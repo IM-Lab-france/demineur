@@ -25,6 +25,7 @@ backup_service_source="$project_dir/deploy/systemd/minesweeper-backup.service"
 backup_timer_source="$project_dir/deploy/systemd/minesweeper-backup.timer"
 backup_verify_service_source="$project_dir/deploy/systemd/minesweeper-backup-verify.service"
 backup_verify_timer_source="$project_dir/deploy/systemd/minesweeper-backup-verify.timer"
+backup_admin_service_source="$project_dir/deploy/systemd/minesweeper-backup-admin.service"
 ai_service_source="$project_dir/deploy/systemd/minesweeper-ai@.service"
 health_service_source="$project_dir/deploy/systemd/minesweeper-health.service"
 health_timer_source="$project_dir/deploy/systemd/minesweeper-health.timer"
@@ -105,6 +106,7 @@ install -o root -g root -m 0644 "$backup_service_source" /etc/systemd/system/min
 install -o root -g root -m 0644 "$backup_timer_source" /etc/systemd/system/minesweeper-backup.timer
 install -o root -g root -m 0644 "$backup_verify_service_source" /etc/systemd/system/minesweeper-backup-verify.service
 install -o root -g root -m 0644 "$backup_verify_timer_source" /etc/systemd/system/minesweeper-backup-verify.timer
+install -o root -g root -m 0644 "$backup_admin_service_source" /etc/systemd/system/minesweeper-backup-admin.service
 install -o root -g root -m 0644 "$health_service_source" /etc/systemd/system/minesweeper-health.service
 install -o root -g root -m 0644 "$health_timer_source" /etc/systemd/system/minesweeper-health.timer
 install -o root -g root -m 0644 "$mail_service_source" /etc/systemd/system/minesweeper-mail.service
@@ -114,12 +116,13 @@ install -o root -g root -m 0644 "$ai_service_source" /etc/systemd/system/mineswe
 sudoers_tmp=$(mktemp)
 trap 'rm -f "$sudoers_tmp"' EXIT
 cat >"$sudoers_tmp" <<'EOF'
-www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start minesweeper-websocket.service, /usr/bin/systemctl stop minesweeper-websocket.service, /usr/bin/systemctl start minesweeper-ai@*.service, /usr/bin/systemctl stop minesweeper-ai@*.service
+www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start minesweeper-websocket.service, /usr/bin/systemctl stop minesweeper-websocket.service, /usr/bin/systemctl start minesweeper-ai@*.service, /usr/bin/systemctl stop minesweeper-ai@*.service, /usr/bin/systemctl start --no-block minesweeper-backup-admin.service
 EOF
 visudo -cf "$sudoers_tmp"
 install -o root -g root -m 0440 "$sudoers_tmp" "$sudoers_target"
 
 systemctl daemon-reload
+/usr/bin/php "$project_dir/scripts/update-backup-index.php"
 systemctl enable "$service_name"
 systemctl enable --now minesweeper-backup.timer
 systemctl enable --now minesweeper-backup-verify.timer

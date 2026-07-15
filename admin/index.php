@@ -75,6 +75,23 @@ try {
 
     <section class="card mt-5">
         <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div><h2 class="h4 mb-1">Sauvegardes</h2><p class="text-muted mb-0">Sauvegardes SQL contrôlées et restauration protégée.</p></div>
+                <button id="create-backup" class="btn btn-primary">Créer une sauvegarde</button>
+            </div>
+            <div id="backup-operation" class="alert alert-info mt-3 d-none" role="status"></div>
+            <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle">
+                    <thead><tr><th>Date</th><th>Taille SQL</th><th>Contrôle</th><th class="text-end">Actions</th></tr></thead>
+                    <tbody id="backup-list"><tr><td colspan="4" class="text-muted">Chargement…</td></tr></tbody>
+                </table>
+            </div>
+            <p class="small text-muted mb-0">La restauration concerne uniquement la base de données. Une sauvegarde de secours est créée automatiquement avant toute restauration.</p>
+        </div>
+    </section>
+
+    <section class="card mt-5">
+        <div class="card-body">
             <h2 class="h4">Réinitialisation des scores</h2>
             <p class="text-muted">Cette action remet à zéro les parties jouées, victoires et égalités. L’historique des parties est conservé.</p>
             <div class="alert alert-warning py-2">Arrêtez le serveur avant de réinitialiser les scores.</div>
@@ -127,6 +144,21 @@ try {
     <div class="message text-center mt-4">
         <div id="alert-container"></div>
     </div>
+</div>
+
+<div class="modal fade" id="restore-modal" tabindex="-1" aria-labelledby="restore-modal-title" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content"><form id="restore-form">
+        <div class="modal-header"><h2 class="modal-title fs-5" id="restore-modal-title">Restaurer une sauvegarde</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button></div>
+        <div class="modal-body">
+            <div class="alert alert-danger">Cette opération remplace toute la base actuelle, déconnecte les joueurs et redémarre les services.</div>
+            <p>Sauvegarde : <code id="restore-backup-label"></code></p>
+            <input type="hidden" id="restore-backup-id">
+            <label for="restore-password" class="form-label">Mot de passe administrateur</label><input id="restore-password" class="form-control mb-3" type="password" autocomplete="current-password" required>
+            <label for="restore-totp" class="form-label">Code Authenticator</label><input id="restore-totp" class="form-control mb-3" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required>
+            <label for="restore-confirmation" class="form-label">Saisissez <code>RESTAURER</code></label><input id="restore-confirmation" class="form-control" autocomplete="off" required>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button><button id="confirm-restore" type="submit" class="btn btn-danger">Restaurer la base</button></div>
+    </form></div></div>
 </div>
 
 <script src="/admin/admin.js?v=<?= (int) filemtime(__DIR__ . '/admin.js') ?>"></script>

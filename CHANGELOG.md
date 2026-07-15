@@ -23,6 +23,7 @@
 - Hourly systemd health checks surfaced in the administration dashboard.
 - Verified e-mail registration, verification resend and secure password recovery.
 - Hashed, expiring and single-use account tokens with session revocation.
+- Administration workflow to create, verify and restore database backups with MFA re-authentication.
 
 ### Changed
 
@@ -37,6 +38,7 @@
 - Unified Apache/PHP and systemd database configuration after secret rotation.
 - Extracted administration login throttling into a dedicated repository component.
 - Added SMTP health visibility and a guided secure mail configuration command.
+- Added automatic safety snapshots, checksum validation and controlled service restarts before database restoration.
 
 ### Security
 
@@ -45,3 +47,4 @@
 - Kept all front-end dependencies local and restricted CSP to same-origin assets.
 - Blocked every dot-prefixed path at Apache level, including repository and backup directories.
 - Removed duplicate HTTP Basic Auth in favor of the rate-limited application session and optional MFA.
+- Restricted browser-initiated backup operations to a fixed root systemd unit and validated backup identifiers.

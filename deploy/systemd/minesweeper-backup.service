@@ -4,6 +4,7 @@ Description=Sauvegarde du Démineur
 [Service]
 Type=oneshot
 User=root
+Environment=XDEBUG_MODE=off
 ExecStart=/var/www/demineur/scripts/backup.sh
 Nice=10
 IOSchedulingClass=idle

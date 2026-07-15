@@ -9,6 +9,12 @@ status_dir="${STATUS_DIR:-/var/log/minesweeper}"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 destination="$backup_root/$timestamp"
 
+while [[ -e "$destination" ]]; do
+  sleep 1
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  destination="$backup_root/$timestamp"
+done
+
 mkdir -p "$destination"
 
 env_file="$secure_dir/.env"
@@ -44,4 +50,5 @@ printf '{"completedAt":"%s","status":"success"}\n' "$(date -u +%FT%TZ)" > "$stat
 chown root:minesweeper "$status_dir/backup-status.json"
 chmod 0640 "$status_dir/backup-status.json"
 find "$backup_root" -mindepth 1 -maxdepth 1 -type d -mtime "+$retention_days" -exec rm -rf -- {} +
+/usr/bin/php /var/www/demineur/scripts/update-backup-index.php
 echo "Sauvegarde créée dans $destination"

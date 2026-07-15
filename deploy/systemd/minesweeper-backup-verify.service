@@ -5,6 +5,7 @@ After=minesweeper-backup.service mysql.service
 [Service]
 Type=oneshot
 User=root
+Environment=XDEBUG_MODE=off
 ExecStart=/var/www/demineur/scripts/verify-backup.sh
 Nice=10
 IOSchedulingClass=idle
