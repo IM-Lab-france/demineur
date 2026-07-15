@@ -12,8 +12,10 @@ legacy_ia_accounts="$project_dir/ia/deminium/ia_accounts.json"
 service_name=minesweeper-websocket.service
 service_source="$project_dir/deploy/systemd/$service_name"
 service_target="/etc/systemd/system/$service_name"
-source_env="$secure_dir/.env"
 service_env="$secure_dir/minesweeper-service.env"
+source_env="$secure_dir/.env"
+config_env="$service_env"
+[[ -f "$config_env" ]] || config_env="$source_env"
 sudoers_target=/etc/sudoers.d/minesweeper-websocket-admin
 apache_proxy_source="$project_dir/deploy/apache/minesweeper-websocket.conf"
 apache_proxy_target=/etc/apache2/conf-available/minesweeper-websocket.conf
@@ -21,9 +23,12 @@ apache_security_source="$project_dir/deploy/apache/minesweeper-security.conf"
 apache_security_target=/etc/apache2/conf-available/minesweeper-security.conf
 backup_service_source="$project_dir/deploy/systemd/minesweeper-backup.service"
 backup_timer_source="$project_dir/deploy/systemd/minesweeper-backup.timer"
+backup_verify_service_source="$project_dir/deploy/systemd/minesweeper-backup-verify.service"
+backup_verify_timer_source="$project_dir/deploy/systemd/minesweeper-backup-verify.timer"
+ai_service_source="$project_dir/deploy/systemd/minesweeper-ai@.service"
 
 [[ -f "$service_source" ]] || { echo "Unité absente: $service_source" >&2; exit 1; }
-[[ -f "$source_env" ]] || { echo "Configuration absente: $source_env" >&2; exit 1; }
+[[ -f "$config_env" ]] || { echo "Configuration absente dans $secure_dir" >&2; exit 1; }
 [[ -f "$apache_proxy_source" ]] || { echo "Configuration Apache absente: $apache_proxy_source" >&2; exit 1; }
 [[ -f "$apache_security_source" ]] || { echo "Configuration de sécurité Apache absente: $apache_security_source" >&2; exit 1; }
 
@@ -35,7 +40,24 @@ fi
 # lui donne l'accès nécessaire sans rendre les secrets lisibles aux autres.
 usermod -a -G minesweeper www-data
 install -d -o root -g minesweeper -m 2770 "$secure_dir"
-install -o root -g minesweeper -m 0640 "$source_env" "$service_env"
+if [[ "$config_env" != "$service_env" ]]; then
+    install -o root -g minesweeper -m 0640 "$config_env" "$service_env"
+else
+    chown root:minesweeper "$service_env"
+    chmod 0640 "$service_env"
+fi
+# Apache/PHP et systemd doivent toujours utiliser le même secret.
+install -o root -g minesweeper -m 0640 "$service_env" "$secure_dir/.env"
+set -a
+# shellcheck disable=SC1090
+source "$service_env"
+set +a
+if [[ -f "$project_dir/install/migrations/20260715_active_games.sql" ]]; then
+    MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260715_active_games.sql"
+fi
+if [[ -f "$project_dir/install/migrations/20260715_auth_sessions.sql" ]]; then
+    MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260715_auth_sessions.sql"
+fi
 if [[ ! -f "$secure_dir/ia_accounts.json" && -f "$legacy_ia_accounts" ]]; then
     install -o root -g minesweeper -m 0640 "$legacy_ia_accounts" "$secure_dir/ia_accounts.json"
     rm -f "$legacy_ia_accounts"
@@ -52,11 +74,14 @@ install -o root -g root -m 0644 "$apache_security_source" "$apache_security_targ
 install -d -o root -g root -m 0700 /var/backups/minesweeper
 install -o root -g root -m 0644 "$backup_service_source" /etc/systemd/system/minesweeper-backup.service
 install -o root -g root -m 0644 "$backup_timer_source" /etc/systemd/system/minesweeper-backup.timer
+install -o root -g root -m 0644 "$backup_verify_service_source" /etc/systemd/system/minesweeper-backup-verify.service
+install -o root -g root -m 0644 "$backup_verify_timer_source" /etc/systemd/system/minesweeper-backup-verify.timer
+install -o root -g root -m 0644 "$ai_service_source" /etc/systemd/system/minesweeper-ai@.service
 
 sudoers_tmp=$(mktemp)
 trap 'rm -f "$sudoers_tmp"' EXIT
 cat >"$sudoers_tmp" <<'EOF'
-www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start minesweeper-websocket.service, /usr/bin/systemctl stop minesweeper-websocket.service
+www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start minesweeper-websocket.service, /usr/bin/systemctl stop minesweeper-websocket.service, /usr/bin/systemctl start minesweeper-ai@*.service, /usr/bin/systemctl stop minesweeper-ai@*.service
 EOF
 visudo -cf "$sudoers_tmp"
 install -o root -g root -m 0440 "$sudoers_tmp" "$sudoers_target"
@@ -64,6 +89,7 @@ install -o root -g root -m 0440 "$sudoers_tmp" "$sudoers_target"
 systemctl daemon-reload
 systemctl enable "$service_name"
 systemctl enable --now minesweeper-backup.timer
+systemctl enable --now minesweeper-backup-verify.timer
 systemctl restart "$service_name"
 a2enmod proxy proxy_http proxy_wstunnel headers expires rewrite
 a2enconf minesweeper-websocket minesweeper-security

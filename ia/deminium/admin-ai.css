@@ -1,0 +1,4 @@
+.toast { min-width: 250px; }
+.toast-zone { position: fixed; top: 1rem; right: 1rem; min-width: 300px; z-index: 1100; }
+.delete-icon { cursor: pointer; color: red; margin-left: 10px; }
+.delete-icon.disabled { cursor: not-allowed; color: grey; }

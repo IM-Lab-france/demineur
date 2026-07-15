@@ -66,4 +66,31 @@ composer audit
 cd admin && npm audit
 ```
 
-Ne jamais publier `.env`, `ia_accounts.json`, les journaux, PID, fichiers pickle ou sauvegardes de base de données.
+Ne jamais publier `.env`, `ia_accounts.json`, les journaux, PID, mémoires IA ou sauvegardes de base de données.
+
+## Installation CLI
+
+L’installation web est désactivée. Sur une nouvelle machine :
+
+```bash
+sudo php /var/www/demineur/scripts/install-cli.php \
+  --db-host=127.0.0.1 --db-name=demineur \
+  --db-user=UTILISATEUR --admin-user=ADMIN
+sudo /var/www/demineur/scripts/install-websocket-service.sh
+```
+
+Les mots de passe sont demandés sans écho dans le terminal. Ils ne doivent pas être placés dans la ligne de commande.
+
+## Finalisation d’une mise à niveau
+
+```bash
+sudo /var/www/demineur/scripts/finalize-upgrade.sh
+```
+
+Cette commande applique les migrations, synchronise la configuration Apache/systemd, migre Jimbo vers JSON, redémarre les services et vérifie une sauvegarde puis sa restauration.
+
+Le MFA administrateur peut ensuite être activé avec :
+
+```bash
+sudo /var/www/demineur/scripts/enable-admin-mfa.sh
+```

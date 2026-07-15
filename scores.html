@@ -36,8 +36,16 @@
     
     <div id="scoresContainer" class="container text-center mt-5">
         <h2>Scores des Joueurs</h2>
+        <div class="form-group mx-auto" id="rankingPeriodGroup">
+            <label for="rankingPeriod">Période</label>
+            <select id="rankingPeriod" class="form-control">
+                <option value="all">Classement général</option>
+                <option value="month">30 derniers jours</option>
+                <option value="week">7 derniers jours</option>
+            </select>
+        </div>
         <div class="form-group">
-            <table class="table table-striped table-hover table-bordered" id="scoresTableContainer">
+            <div class="table-responsive"><table class="table table-striped table-hover table-bordered" id="scoresTableContainer">
                 <thead class="thead-dark">
                     <tr>
                         <th>Joueur</th>
@@ -52,7 +60,7 @@
                 <tbody id="scoresTable">
                     <!-- Les scores des joueurs seront affichés ici -->
                 </tbody>
-            </table>
+            </table></div>
         </div>
     </div>
     

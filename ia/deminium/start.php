@@ -40,11 +40,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // Construire la commande pour démarrer le script
+    // Chaque IA est isolée dans une unité systemd dédiée lorsque le modèle est installé.
     $mainScript = realpath(__DIR__ . '/main.py');
     if (!is_dir($logDir) && !mkdir($logDir, 0750, true)) {
         http_response_code(500);
         echo json_encode(['success' => false, 'message' => 'Répertoire sécurisé des journaux IA indisponible.']);
+        exit;
+    }
+    $systemdUnit = 'minesweeper-ai@' . $iaName . '.service';
+    $systemdTemplate = '/etc/systemd/system/minesweeper-ai@.service';
+    if (is_file($systemdTemplate)) {
+        $instanceEnv = (getenv('APP_CONFIG_DIR') ?: '/var/www/secure') . '/ai-' . $iaName . '.env';
+        file_put_contents($instanceEnv, "IA_INVITE=" . ($invite ? '1' : '0') . "\nIA_LEVEL={$level}\nIA_PAUSE_MS={$pause}\n", LOCK_EX);
+        @chmod($instanceEnv, 0640);
+        exec('/usr/bin/sudo -n /usr/bin/systemctl start ' . escapeshellarg($systemdUnit) . ' 2>&1', $output, $code);
+        usleep(500000);
+        exec('/usr/bin/systemctl is-active ' . escapeshellarg($systemdUnit) . ' 2>/dev/null', $state, $stateCode);
+        if ($code === 0 && $stateCode === 0 && trim(implode('', $state)) === 'active') {
+            echo json_encode(['success' => true, 'message' => 'IA démarrée dans son service isolé.']);
+        } else {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'message' => 'Le service isolé de l’IA n’a pas démarré.', 'log' => implode("\n", $output)]);
+        }
         exit;
     }
     $command = ($useSecureLogs ? 'IA_LOG_ROOT=' . escapeshellarg($secureLogRoot) . ' ' : '')

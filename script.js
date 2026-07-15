@@ -1,6 +1,12 @@
 // script.js
 
 let socket;
+
+function setElementDisplay(element, display) {
+    if (!element) return;
+    element.classList.remove('display-none', 'display-block', 'display-flex');
+    element.classList.add(`display-${display}`);
+}
 let username;
 let currentGameId;
 let refreshInterval;
@@ -85,7 +91,7 @@ muteButton.addEventListener('click', () => {
 // Fonction pour afficher l'overlay d'aide
 function showHelpOverlay() {
     const overlay = document.getElementById('helpOverlay');
-    overlay.style.display = 'flex'; // Assurez-vous que l'overlay est affiché
+    setElementDisplay(overlay, 'flex');
     // Force un reflow pour que la transition fonctionne
     overlay.offsetHeight; // Déclenche un reflow
     overlay.classList.add('show'); // Ajoute la classe pour démarrer la transition
@@ -97,7 +103,7 @@ function hideHelpOverlay() {
     overlay.classList.remove('show'); // Retire la classe pour démarrer la transition de disparition
     // Une fois la transition terminée, cacher l'overlay
     overlay.addEventListener('transitionend', function handler() {
-        overlay.style.display = 'none'; // Cache l'overlay après la transition
+        setElementDisplay(overlay, 'none');
         overlay.removeEventListener('transitionend', handler); // Retire l'écouteur pour éviter les appels multiples
     });
 }
@@ -176,6 +182,7 @@ function connectWebSocket() {
     }
 
     socket.onopen = function() {
+        setConnectionStatus('Connecté', true);
         console.log("WebSocket connecté : " + wsUrl);
         connected = true;
         isReconnecting = false;
@@ -219,12 +226,12 @@ function connectWebSocket() {
                 }
                 // Masquer la section de connexion et afficher la liste des joueurs
                 hideModal(loginModal); 
-                document.getElementById('game').style.display = 'block';
+                setElementDisplay(document.getElementById('game'), 'block');
                 document.getElementById('navbarUserDisplay').textContent = data.username;
-                document.getElementById('navbar').style.display = 'block';
-                document.getElementById('welcomeMessage').style.display = 'block';
-                document.getElementById('logoutLink').style.display = 'block';
-                document.getElementById('availableUser').style.display = 'block';
+                setElementDisplay(document.getElementById('navbar'), 'block');
+                setElementDisplay(document.getElementById('welcomeMessage'), 'block');
+                setElementDisplay(document.getElementById('logoutLink'), 'block');
+                setElementDisplay(document.getElementById('availableUser'), 'block');
                 refreshPlayersList(data.players);
                 break;
 
@@ -245,16 +252,19 @@ function connectWebSocket() {
                 break;
 
             case 'connected_players':
-                
                 // Rafraîchir la liste des joueurs connectés
                 refreshPlayersList(data.players);
+                if (!currentGameId && username) {
+                    setElementDisplay(document.getElementById('game'), 'block');
+                    setElementDisplay(document.getElementById('availableUser'), 'block');
+                }
                 break;
 
             case 'game_start':
 
                 // Stocker le game_id pour les futures actions
-                document.getElementById('availableUser').style.display = 'none';
-                document.getElementById('gameContainer').style.display = 'flex';
+                setElementDisplay(document.getElementById('availableUser'), 'none');
+                setElementDisplay(document.getElementById('gameContainer'), 'flex');
                 currentGameId = data.game_id;
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
@@ -273,8 +283,8 @@ function connectWebSocket() {
 
             case 'game_resumed':
                 currentGameId = data.game_id;
-                document.getElementById('availableUser').style.display = 'none';
-                document.getElementById('gameContainer').style.display = 'flex';
+                setElementDisplay(document.getElementById('availableUser'), 'none');
+                setElementDisplay(document.getElementById('gameContainer'), 'flex');
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 currentPlayerDisplay = document.getElementById('currentTurnDisplay');
@@ -292,7 +302,7 @@ function connectWebSocket() {
 
             case 'invite':
                 document.getElementById('inviter').textContent = data.inviter;
-                document.getElementById('invitation').style.display = 'block';
+                setElementDisplay(document.getElementById('invitation'), 'block');
                 currentInvitationId = data.invitationId;
                 break;
 
@@ -346,11 +356,13 @@ function connectWebSocket() {
 
     // Gestion de la fermeture ou de l'erreur de connexion WebSocket
     socket.onerror = function() {
+        setConnectionStatus('Connexion interrompue', false);
         logMessage('Impossible de se connecter au serveur WebSocket.');
         showConnectionError();
     };
 
     socket.onclose = function() {
+        setConnectionStatus('Reconnexion…', false);
         logMessage('Connexion WebSocket fermée.');
         connected = false; // Indiquer que le client est déconnecté
         showConnectionError();
@@ -358,6 +370,13 @@ function connectWebSocket() {
         attemptReconnect(); // Essayer de se reconnecter
     };
 
+}
+
+function setConnectionStatus(label, connected) {
+    const status = document.getElementById('connectionStatus');
+    if (!status) return;
+    status.textContent = label;
+    status.classList.toggle('connected', connected);
 }
 
 
@@ -430,7 +449,9 @@ function hideConnectionError() {
 function refreshPlayersList(players) {
     const playersList = document.getElementById('players');
     playersList.innerHTML = '';
-    const filteredPlayers = players.filter(player => player.id !== currentPlayerId);
+    const filteredPlayers = (Array.isArray(players) ? players : []).filter(
+        player => Number(player.id) !== Number(currentPlayerId)
+    );
     
     if (filteredPlayers.length === 0) {
         // Si aucun autre joueur en ligne, afficher le message
@@ -452,12 +473,12 @@ function refreshPlayersList(players) {
 function invitePlayer(playerId) {
     // Afficher la popin
     const inviteModal = document.getElementById('inviteSettingsModal');
-    inviteModal.style.display = 'block';
+    setElementDisplay(inviteModal, 'block');
 
     // Gestion de la fermeture de la popin
     const closeBtn = document.getElementById('closeInviteSettings');
     closeBtn.onclick = function() {
-        inviteModal.style.display = 'none';
+        setElementDisplay(inviteModal, 'none');
     };
 
     // Gestion de l'envoi de l'invitation après sélection de la grille et difficulté
@@ -478,7 +499,7 @@ function invitePlayer(playerId) {
         }));
 
         // Masquer la popin après l'envoi
-        inviteModal.style.display = 'none';
+        setElementDisplay(inviteModal, 'none');
 
         console.log('Invitation envoyée à ' + playerId + ' avec une grille de ' + gridSize + ' et une difficulté de ' + difficulty + '%');
     };
@@ -495,7 +516,7 @@ function acceptInvite() {
     }));
 
     // Masquer la popin d'invitation
-    document.getElementById('invitation').style.display = 'none';
+    setElementDisplay(document.getElementById('invitation'), 'none');
 }
 
 function declineInvite() {
@@ -509,7 +530,7 @@ function declineInvite() {
     }));
 
     // Masquer la popin d'invitation
-    document.getElementById('invitation').style.display = 'none';
+    setElementDisplay(document.getElementById('invitation'), 'none');
 }
 
 // Afficher le plateau de jeu
@@ -682,8 +703,8 @@ function handleLogoutSuccess(data) {
     username = undefined;
     currentPlayerId = undefined;
     currentGameId = undefined;
-    document.getElementById('game').style.display = 'none';
-    document.getElementById('navbar').style.display = 'none';
+    setElementDisplay(document.getElementById('game'), 'none');
+    setElementDisplay(document.getElementById('navbar'), 'none');
     showLoginModal();
     logMessage('Vous avez été déconnecté.');
 }
@@ -739,7 +760,7 @@ function showWinnerModal(winnerMessage, gameId) {
     const modal = document.getElementById('winnerModal');
     const message = document.getElementById('winnerMessage');
     message.textContent = winnerMessage;
-    modal.style.display = 'flex';
+    setElementDisplay(modal, 'flex');
     
 }
 
@@ -761,9 +782,9 @@ async function sendRegister(username, password) {
 
 // Fermer la modale du gagnant
 document.getElementById('closeModalBtn').addEventListener('click', () => {
-    document.getElementById('winnerModal').style.display = 'none';
-    document.getElementById('availableUser').style.display = 'block';
-    document.getElementById('gameContainer').style.display = 'none';
+    setElementDisplay(document.getElementById('winnerModal'), 'none');
+    setElementDisplay(document.getElementById('availableUser'), 'block');
+    setElementDisplay(document.getElementById('gameContainer'), 'none');
     clearGameBoard();
     socket.send(JSON.stringify({
         type: 'refresh_players',
@@ -800,11 +821,11 @@ document.getElementById('logoutLink').addEventListener('click', () => {
     sessionStorage.removeItem('minesweeperSessionToken');
     clearGameBoard(); 
     socket.send(JSON.stringify({ type: 'logout' }));
-    document.getElementById('welcomeMessage').style.display = 'none';
-    document.getElementById('logoutLink').style.display = 'none';
+    setElementDisplay(document.getElementById('welcomeMessage'), 'none');
+    setElementDisplay(document.getElementById('logoutLink'), 'none');
     
-    document.getElementById('game').style.display = 'none';
-    document.getElementById('navbar').style.display = 'none';
+    setElementDisplay(document.getElementById('game'), 'none');
+    setElementDisplay(document.getElementById('navbar'), 'none');
     logMessage('Déconnexion de ' + username);
     connected = false;
 });

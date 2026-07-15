@@ -63,3 +63,29 @@ CREATE TABLE `game_moves` (
   KEY `idx_game_moves_game_id` (`game_id`),
   KEY `idx_game_moves_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `active_games` (
+  `game_id` varchar(64) NOT NULL,
+  `player1_id` int NOT NULL,
+  `player2_id` int NOT NULL,
+  `turn_user_id` int NOT NULL,
+  `state_json` json NOT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`game_id`),
+  KEY `idx_active_games_player1` (`player1_id`),
+  KEY `idx_active_games_player2` (`player2_id`),
+  CONSTRAINT `fk_active_games_player1` FOREIGN KEY (`player1_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_active_games_player2` FOREIGN KEY (`player2_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `auth_sessions` (
+  `token_hash` char(64) NOT NULL,
+  `user_id` int NOT NULL,
+  `expires_at` timestamp NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_used_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`token_hash`),
+  KEY `idx_auth_sessions_user` (`user_id`),
+  KEY `idx_auth_sessions_expires` (`expires_at`),
+  CONSTRAINT `fk_auth_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

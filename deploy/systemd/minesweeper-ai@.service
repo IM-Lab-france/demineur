@@ -1,0 +1,37 @@
+[Unit]
+Description=IA Démineur %i
+After=network-online.target minesweeper-websocket.service
+PartOf=minesweeper-websocket.service
+
+[Service]
+Type=simple
+User=www-data
+Group=minesweeper
+WorkingDirectory=/var/www/demineur/ia/deminium
+EnvironmentFile=/var/www/secure/minesweeper-service.env
+EnvironmentFile=-/var/www/secure/ai-%i.env
+Environment=APP_CONFIG_DIR=/var/www/secure
+Environment=IA_ACCOUNTS_FILE=/var/www/secure/ia_accounts.json
+Environment=IA_LOG_ROOT=/var/log/minesweeper/ai
+Environment=MINESWEEPER_WS_URL=ws://127.0.0.1:8080
+ExecStart=/var/www/demineur/ia/deminium/plugins/%i/env/bin/python /var/www/demineur/ia/deminium/main.py --model=%i
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGTERM
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=256M
+CPUQuota=75%
+ReadWritePaths=/var/log/minesweeper/ai /var/www/demineur/ia/deminium/plugins/%i
+
+[Install]
+WantedBy=multi-user.target

@@ -10,6 +10,28 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: demineur
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_NAME: demineur
+      DB_USER: root
+      DB_PASS: root
+      E2E_WS_URL: ws://127.0.0.1:8080
+      E2E_ORIGIN: http://localhost
+      E2E_PLAYER1: e2e_player_1
+      E2E_PASSWORD1: E2e-Password!2026
+      E2E_PLAYER2: e2e_player_2
+      E2E_PASSWORD2: E2e-Password!2026
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -20,8 +42,22 @@ jobs:
         with:
           node-version: '20'
       - run: composer install --no-interaction --prefer-dist
+      - run: composer audit --no-interaction
+      - run: mysql -h 127.0.0.1 -uroot -proot demineur < install/install.sql
+      - run: php tests/provision_e2e.php
+      - run: php tests/auth_session_repository_test.php
       - run: php tests/server_unit.php
       - run: php tests/game_outcome_test.php
+      - run: php tests/admin_security_test.php
       - run: php -l server.php && php -l index.php
       - run: node --check script.js && node --check scores.js
       - run: bash -n scripts/*.sh
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npx playwright install --with-deps chromium
+      - run: php server.php > /tmp/minesweeper-e2e.log 2>&1 &
+        env:
+          WS_HOST: 127.0.0.1
+          WS_PORT: 8080
+          WS_ALLOWED_ORIGINS: localhost,127.0.0.1
+      - run: npm run test:e2e

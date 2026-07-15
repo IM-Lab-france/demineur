@@ -1,0 +1,10 @@
+[Unit]
+Description=Vérification de restauration de la sauvegarde Démineur
+After=minesweeper-backup.service mysql.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/var/www/demineur/scripts/verify-backup.sh
+Nice=10
+IOSchedulingClass=idle

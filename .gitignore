@@ -9,9 +9,14 @@ ia/deminium/ia_accounts.json
 ia/deminium/ia_moves.json
 ia/deminium/plugins/*/pid
 ia/deminium/plugins/*/memory.pkl
+ia/deminium/plugins/*/memory.json
 admin/locks/*.lock
 .installed
 :USERPROFILE*
 *.pem
 *.key
 security-quarantine/
+node_modules/
+test-results/
+playwright-report/
+.vendor-pre-security-update/

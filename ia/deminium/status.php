@@ -13,6 +13,10 @@ foreach ($iaList as $iaPath) {
     $pidFile = "$iaPath/pid";
     $pid = file_exists($pidFile) ? trim((string) file_get_contents($pidFile)) : '';
     $running = ctype_digit($pid) && (int) $pid > 1 && posix_kill((int) $pid, 0);
+    $unit = 'minesweeper-ai@' . $iaName . '.service';
+    exec('/usr/bin/systemctl is-active ' . escapeshellarg($unit) . ' 2>/dev/null', $serviceState, $serviceCode);
+    $serviceRunning = $serviceCode === 0 && trim(implode('', $serviceState)) === 'active';
+    $running = $running || $serviceRunning;
     if (!$running && is_file($pidFile)) @unlink($pidFile);
     $secureLog = '/var/log/minesweeper/ai/' . $iaName . '/run.log';
     $fallbackLog = $iaPath . '/logs/run.log';
@@ -25,7 +29,8 @@ foreach ($iaList as $iaPath) {
     $status[$iaName] = [
         'initialized' => $initialized,
         'running' => $running,
-        'pid' => $running ? (int) $pid : null,
+        'pid' => ctype_digit($pid) ? (int) $pid : null,
+        'managedBySystemd' => $serviceRunning,
         'lastLog' => $lastLog,
     ];
 }

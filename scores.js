@@ -57,8 +57,13 @@ function connectWebSocket() {
 
 // Fonction pour récupérer les scores des joueurs
 function fetchPlayerScores() {
-    socket.send(JSON.stringify({ type: 'get_scores' })); // Demander les scores au serveur
+    const period = document.getElementById('rankingPeriod')?.value || 'all';
+    socket.send(JSON.stringify({ type: 'get_scores', period }));
 }
+
+document.getElementById('rankingPeriod')?.addEventListener('change', () => {
+    if (socket?.readyState === WebSocket.OPEN) fetchPlayerScores();
+});
 
 // Fonction pour afficher les scores des joueurs
 function refreshScores(players) {
@@ -89,19 +94,14 @@ function refreshScores(players) {
         row.insertCell().textContent = player.games_draw || 0;
         row.insertCell().textContent = player.ranking_points || 0;
         const percentageCell = row.insertCell();
-        const progress = document.createElement('div');
-        progress.className = 'progress';
-        const bar = document.createElement('div');
-        bar.className = 'progress-bar bg-success';
-        bar.setAttribute('role', 'progressbar');
         const percentage = Math.max(0, Math.min(100, winPercentage));
-        bar.style.width = `${percentage.toFixed(2)}%`;
-        bar.setAttribute('aria-valuenow', percentage.toFixed(2));
-        bar.setAttribute('aria-valuemin', '0');
-        bar.setAttribute('aria-valuemax', '100');
-        bar.textContent = `${percentage.toFixed(2)}%`;
-        progress.appendChild(bar);
+        const progress = document.createElement('progress');
+        progress.className = 'score-progress';
+        progress.max = 100;
+        progress.value = percentage;
+        progress.setAttribute('aria-label', `${percentage.toFixed(2)} % de victoires`);
         percentageCell.appendChild(progress);
+        percentageCell.append(document.createTextNode(` ${percentage.toFixed(2)}%`));
         scoresTable.appendChild(row);
     });
 }

@@ -16,7 +16,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
     <title>Démineur Multijoueur</title>
     <link href="/assets/vendor/bootstrap/4.5.2/bootstrap.min.css" rel="stylesheet"> <!-- Bootstrap -->
     <link rel="preload" href="img/background2.webp" as="image" type="image/webp" fetchpriority="high">
-    <link rel="stylesheet" href="styles.css"> <!-- Lien vers le fichier CSS -->
+    <link rel="stylesheet" href="styles.css?v=<?= (int) filemtime(__DIR__ . '/styles.css') ?>"> <!-- Lien vers le fichier CSS -->
     <!-- Ajout du favicon -->
     <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
 </head>
@@ -36,7 +36,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
                     <a class="nav-link" href="scores.html">Scores</a>
                 </li>
                 <li>
-                    <button id="muteButton" class="btn btn-light">🔊</button>
+                    <button id="muteButton" class="btn btn-light" aria-label="Couper ou rétablir le son">🔊</button>
                 </li>
                 <li class="nav-item">
                     <a id="logoutLink" class="nav-link text-danger" href="#">Déconnexion</a>
@@ -47,9 +47,10 @@ if (!is_dir(__DIR__ . '/vendor')) {
     </nav>
 
     <!-- Aide Overlay -->
-    <div id="helpOverlay" class="help-overlay">
+    <div id="connectionStatus" class="connection-status" role="status" aria-live="polite">Connexion…</div>
+    <div id="helpOverlay" class="help-overlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
         <div class="help-content">
-            <h2>❓ Besoin d'aide ?</h2>
+            <h2 id="helpTitle">❓ Besoin d'aide ?</h2>
             <p>Bienvenue dans le démineur multijoueur ! Voici comment jouer, et n'oubliez pas : on vous observe...</p>
             <ul>
                 <li>
@@ -81,7 +82,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
     <!-- Modal de Connexion -->
     <div id="loginModal" class="modal hidden">
         <div class="modal-content">
-            <img src="img/demineur.png">
+            <img src="img/demineur.png" alt="Logo du Démineur">
             <p>Connectez-vous pour rejoindre l'aventure.</p>
             <div class="form-group">
                 <input type="text" id="loginUsername" class="form-control" placeholder="Nom d'utilisateur">
@@ -153,7 +154,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
     <div id="messages" class="container-fluid"></div>
 
     <!-- Popin pour choisir la taille de la grille et la difficulté -->
-    <div id="inviteSettingsModal" class="modal" style="display: none;">
+    <div id="inviteSettingsModal" class="modal hidden">
         <div class="modal-content invite-modal">
             <span class="close" id="closeInviteSettings">&times;</span>
             <h3>Choisir les paramètres de la partie</h3>
@@ -187,6 +188,6 @@ if (!is_dir(__DIR__ . '/vendor')) {
     <!-- jQuery, Popper.js, and Bootstrap JS -->
     <script defer src="/assets/vendor/jquery/jquery-3.5.1.slim.min.js"></script>
     <script defer src="/assets/vendor/bootstrap/4.5.2/bootstrap.bundle.min.js"></script>
-    <script defer src="script.js"></script> <!-- Lien vers le fichier JavaScript -->
+    <script defer src="script.js?v=<?= (int) filemtime(__DIR__ . '/script.js') ?>"></script> <!-- Lien vers le fichier JavaScript -->
 </body>
 </html>

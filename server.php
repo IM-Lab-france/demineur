@@ -23,6 +23,7 @@ use Monolog\Handler\StreamHandler;
 use Monolog\Handler\RotatingFileHandler;
 
 require __DIR__ . '/db.php';
+require __DIR__ . '/src/AuthSessionRepository.php';
 
 
 // Le logger est initialisé avant le serveur et la base afin de conserver aussi
@@ -109,22 +110,37 @@ class MinesweeperServer implements MessageComponentInterface {
     protected $registrationAttempts = [];
     protected $authSessions = [];
     protected $pendingReconnects = [];
+    protected $recoverableGames = [];
     protected $actionWindows = [];
     protected $recordMoveStatement;
+    protected $pendingMoves = [];
+    protected $moveFlushScheduled = false;
+    protected $moveSqlTotalMs = 0.0;
+    protected $moveSqlBatches = 0;
+    protected $actionCount = 0;
+    protected $websocketErrors = 0;
     protected $allowedGridSizes = ['10x10', '20x20', '30x30'];
     protected $allowedDifficulties = [10, 15, 22];
+    protected $startedAt;
 
     protected $logger; // Ajout d'une propriété pour le logger
     protected $db;
+    protected $authSessionRepository;
 
     public function __construct($logger) {
         $this->clients = new \SplObjectStorage;
+        $this->startedAt = time();
         $this->players = [];
         $this->games = [];
         $this->defaultNbMines = intval($this->defaultSize * $this->defaultSize * $this->difficulty);
         $this->logger = $logger; // Initialisation du logger
         $this->logger->info('Initialisation de la connexion à la base de données.');
         $this->db = new Database();
+        $this->authSessionRepository = new AuthSessionRepository($this->db->getPDO());
+        $this->loadRecoverableGames();
+        register_shutdown_function(function (): void {
+            if ($this->pendingMoves) $this->flushPendingMoves();
+        });
         $this->logger->info('Backend du jeu initialisé.', [
             'php_version' => PHP_VERSION,
             'pid' => getmypid(),
@@ -148,6 +164,7 @@ class MinesweeperServer implements MessageComponentInterface {
     }
 
     public function onMessage(ConnectionInterface $from, $msg) {
+        $this->actionCount++;
         if (strlen($msg) > 65536) {
             $this->sendError($from, 'Message trop volumineux.');
             $from->close();
@@ -222,7 +239,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 $this->sendConnectedPlayersList($from);
                 break;
             case 'get_scores':
-                $this->handleGetScores($from);
+                $this->handleGetScores($from, $data);
                 break;
             case 'get_player_count':
                 $this->handleGetPlayerCount($from);
@@ -363,6 +380,7 @@ class MinesweeperServer implements MessageComponentInterface {
     }
 
     public function onError(ConnectionInterface $from, \Exception $e) {
+        $this->websocketErrors++;
         $this->logger->error('Erreur de connexion WebSocket.', [
             'connection_id' => $from->resourceId,
             'exception' => get_class($e),
@@ -698,6 +716,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 'username' => $username,
                 'expires_at' => time() + 43200,
             ];
+            $this->persistAuthSession($sessionToken, (int) $user['id'], time() + 43200);
             // Connexion réussie
             $this->players[$from->resourceId] = [
                 'id' => $user['id'],
@@ -712,6 +731,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 'sessionToken' => $sessionToken,
                 'players' => $this->getConnectedPlayers()
             ]));
+            $this->tryRestoreGamesForUser((int) $user['id']);
 
             $this->logger->info("OUT:" . json_encode([
                 'type' => 'login_success',
@@ -745,9 +765,10 @@ class MinesweeperServer implements MessageComponentInterface {
             return;
         }
 
-        $session = $this->authSessions[$token] ?? null;
+        $session = $this->authSessions[$token] ?? $this->loadPersistedAuthSession($token);
         if (!$session || $session['expires_at'] < time()) {
             unset($this->authSessions[$token]);
+            $this->deletePersistedAuthSession($token);
             $from->send(json_encode(['type' => 'resume_failed']));
             return;
         }
@@ -767,6 +788,7 @@ class MinesweeperServer implements MessageComponentInterface {
             'session_token' => $token,
         ];
         $this->authSessions[$token]['expires_at'] = time() + 43200;
+        $this->persistAuthSession($token, (int) $session['id'], time() + 43200);
 
         $resumedGameId = null;
         if (isset($this->pendingReconnects[$token])) {
@@ -836,7 +858,10 @@ class MinesweeperServer implements MessageComponentInterface {
     
         $username = $this->players[$from->resourceId]['username'];
         $sessionToken = $this->players[$from->resourceId]['session_token'] ?? null;
-        if ($sessionToken !== null) unset($this->authSessions[$sessionToken]);
+        if ($sessionToken !== null) {
+            unset($this->authSessions[$sessionToken]);
+            $this->deletePersistedAuthSession($sessionToken);
+        }
         foreach ($this->games as $gameId => $game) {
             if (!in_array($from->resourceId, $game['players'], true)) continue;
             $otherPlayerId = $game['players'][0] === $from->resourceId ? $game['players'][1] : $game['players'][0];
@@ -982,7 +1007,7 @@ class MinesweeperServer implements MessageComponentInterface {
             $this->handleGameStart($inviterResourceId, $inviteeResourceId);
 
             // Tirer un nombre aléatoire entre 0 et 1
-            $randomNumber = rand(0, 100) / 100;
+            $randomNumber = random_int(0, 100) / 100;
     
             // Affecter $firstPlay en fonction du tirage
             if ($randomNumber > 0.5) {
@@ -1003,6 +1028,8 @@ class MinesweeperServer implements MessageComponentInterface {
                 'mineCount' => $numMines,
                 'spectators' => []
             ];
+            $this->persistGame($gameId);
+            $this->writeStatusSnapshot();
             $this->logger->info('Partie créée.', [
                 'game_id' => $gameId,
                 'inviter_connection_id' => $inviterResourceId,
@@ -1261,6 +1288,7 @@ class MinesweeperServer implements MessageComponentInterface {
     
             // Passer au prochain joueur
             $this->games[$gameId]['currentTurn'] = $this->getNextPlayer($gameId);
+            $this->persistGame($gameId);
             $maskedBoard = $this->maskMinesForPlayer($this->games[$gameId]['board']);
 
             // Envoyer la mise à jour du plateau à tous les joueurs
@@ -1281,25 +1309,50 @@ class MinesweeperServer implements MessageComponentInterface {
     }
 
     protected function recordMove($gameId, $x, $y, $explosionArea, $result) {
+        $this->pendingMoves[] = [
+            ':game_id' => $gameId,
+            ':x' => $x,
+            ':y' => $y,
+            ':explosion_area' => json_encode($explosionArea, JSON_THROW_ON_ERROR),
+            ':result' => $result,
+        ];
+        if (!$this->moveFlushScheduled) {
+            $this->moveFlushScheduled = true;
+            \React\EventLoop\Loop::addTimer(0.001, function (): void { $this->flushPendingMoves(); });
+        }
+    }
+
+    protected function flushPendingMoves(): void {
+        $this->moveFlushScheduled = false;
+        $moves = array_splice($this->pendingMoves, 0, 100);
+        if (!$moves) return;
         if ($this->recordMoveStatement === null) {
             $this->recordMoveStatement = $this->db->getPDO()->prepare(
                 "INSERT INTO game_moves (game_id, x, y, explosion_area, result) VALUES (:game_id, :x, :y, :explosion_area, :result)"
             );
         }
         $startedAt = microtime(true);
-        $this->recordMoveStatement->execute([
-            ':game_id' => $gameId,
-            ':x' => $x,
-            ':y' => $y,
-            ':explosion_area' => json_encode($explosionArea),
-            ':result' => $result
-        ]);
+        $pdo = $this->db->getPDO();
+        $pdo->beginTransaction();
+        try {
+            foreach ($moves as $move) $this->recordMoveStatement->execute($move);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $this->logger->error('Échec de l’historisation groupée des coups.', ['count' => count($moves), 'error' => $e->getMessage()]);
+        }
         $durationMs = (microtime(true) - $startedAt) * 1000;
+        $this->moveSqlTotalMs += $durationMs;
+        $this->moveSqlBatches++;
         if ($durationMs >= 50) {
             $this->logger->warning('Enregistrement SQL lent pour un coup.', [
-                'game_id' => $gameId,
+                'move_count' => count($moves),
                 'duration_ms' => round($durationMs, 2),
             ]);
+        }
+        if ($this->pendingMoves && !$this->moveFlushScheduled) {
+            $this->moveFlushScheduled = true;
+            \React\EventLoop\Loop::addTimer(0.001, function (): void { $this->flushPendingMoves(); });
         }
     }
 
@@ -1355,6 +1408,7 @@ class MinesweeperServer implements MessageComponentInterface {
         }
 
         $this->games[$gameId]['board'][$x][$y]['flagged'] = !$this->games[$gameId]['board'][$x][$y]['flagged'];
+        $this->persistGame($gameId);
         $maskedBoard = $this->maskMinesForPlayer($this->games[$gameId]['board']);
 
         foreach ($this->games[$gameId]['players'] as $playerId) {
@@ -1400,6 +1454,8 @@ class MinesweeperServer implements MessageComponentInterface {
             $this->games[$gameId]['board'] = $board;
             $this->games[$gameId]['ready'] = [];
             $this->games[$gameId]['currentTurn'] = $this->games[$gameId]['players'][0]; // Réinitialisation du tour
+            $this->games[$gameId]['moves'] = 0;
+            $this->persistGame($gameId);
 
             foreach ($this->games[$gameId]['players'] as $playerId) {
                 $connection = $this->getConnectionFromPlayerId($playerId);
@@ -1479,7 +1535,9 @@ class MinesweeperServer implements MessageComponentInterface {
         }
         
         // Supprimer la partie
+        $this->deletePersistedGame($gameId);
         unset($this->games[$gameId]);
+        $this->writeStatusSnapshot();
     }
 
     protected function determineGameOutcome(array $game, $loserId = null, bool $isDraw = false, $explicitWinnerId = null): array {
@@ -1515,12 +1573,131 @@ class MinesweeperServer implements MessageComponentInterface {
         $stmt->execute();
     }
 
+    protected function persistAuthSession(string $token, int $userId, int $expiresAt): void {
+        try {
+            $this->authSessionRepository->save($token, $userId, $expiresAt);
+            if (random_int(1, 100) === 1) {
+                $this->authSessionRepository->purgeExpired();
+            }
+        } catch (Throwable $e) {
+            if ($this->logger) $this->logger->warning('Session persistante non enregistrée.', ['error' => $e->getMessage()]);
+        }
+    }
+
+    protected function loadPersistedAuthSession(string $token): ?array {
+        try {
+            $loaded = $this->authSessionRepository->findValid($token);
+            if (!$loaded) return null;
+            $this->authSessions[$token] = $loaded;
+            return $loaded;
+        } catch (Throwable $e) {
+            if ($this->logger) $this->logger->warning('Lecture de session persistante impossible.', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    protected function deletePersistedAuthSession(string $token): void {
+        try {
+            $this->authSessionRepository->delete($token);
+        } catch (Throwable $e) {
+            if ($this->logger) $this->logger->warning('Révocation de session persistante impossible.', ['error' => $e->getMessage()]);
+        }
+    }
+
+    protected function loadRecoverableGames(): void {
+        try {
+            $rows = $this->db->getPDO()->query(
+                "SELECT game_id, player1_id, player2_id, turn_user_id, state_json FROM active_games WHERE updated_at >= NOW() - INTERVAL 24 HOUR"
+            )->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as $row) {
+                $state = json_decode($row['state_json'], true);
+                if (!is_array($state) || !isset($state['board'], $state['mineCount'])) continue;
+                $this->recoverableGames[$row['game_id']] = [
+                    'player_user_ids' => [(int) $row['player1_id'], (int) $row['player2_id']],
+                    'turn_user_id' => (int) $row['turn_user_id'],
+                    'state' => $state,
+                ];
+            }
+            if ($rows) $this->logger->info('Parties récupérables chargées.', ['count' => count($this->recoverableGames)]);
+        } catch (Throwable $e) {
+            if ($this->logger) $this->logger->warning('Persistance des parties indisponible; appliquez la migration active_games.', ['error' => $e->getMessage()]);
+        }
+    }
+
+    protected function persistGame(string $gameId): void {
+        if (!isset($this->games[$gameId])) return;
+        $game = $this->games[$gameId];
+        $player1 = $this->players[$game['players'][0]]['id'] ?? null;
+        $player2 = $this->players[$game['players'][1]]['id'] ?? null;
+        $turnUser = $this->players[$game['currentTurn']]['id'] ?? null;
+        if (!$player1 || !$player2 || !$turnUser) return;
+        $state = [
+            'board' => $game['board'], 'moves' => $game['moves'], 'mineCount' => $game['mineCount'],
+            'inviter_user_id' => $this->players[$game['inviter']]['id'] ?? $player1,
+            'invitee_user_id' => $this->players[$game['invitee']]['id'] ?? $player2,
+        ];
+        try {
+            $stmt = $this->db->getPDO()->prepare(
+                'INSERT INTO active_games (game_id, player1_id, player2_id, turn_user_id, state_json) VALUES (:game_id,:p1,:p2,:turn_user,:state) '
+                . 'ON DUPLICATE KEY UPDATE turn_user_id=VALUES(turn_user_id), state_json=VALUES(state_json), updated_at=CURRENT_TIMESTAMP'
+            );
+            $stmt->execute(['game_id' => $gameId, 'p1' => $player1, 'p2' => $player2, 'turn_user' => $turnUser, 'state' => json_encode($state, JSON_THROW_ON_ERROR)]);
+        } catch (Throwable $e) {
+            if ($this->logger) $this->logger->warning('Instantané de partie non enregistré.', ['game_id' => $gameId, 'error' => $e->getMessage()]);
+        }
+    }
+
+    protected function deletePersistedGame(string $gameId): void {
+        unset($this->recoverableGames[$gameId]);
+        try {
+            $stmt = $this->db->getPDO()->prepare('DELETE FROM active_games WHERE game_id = :game_id');
+            $stmt->execute(['game_id' => $gameId]);
+        } catch (Throwable $e) {
+            if ($this->logger) $this->logger->warning('Instantané de partie non supprimé.', ['game_id' => $gameId, 'error' => $e->getMessage()]);
+        }
+    }
+
+    protected function tryRestoreGamesForUser(int $userId): void {
+        foreach ($this->recoverableGames as $gameId => $snapshot) {
+            if (!in_array($userId, $snapshot['player_user_ids'], true)) continue;
+            $resources = [];
+            foreach ($snapshot['player_user_ids'] as $participantId) {
+                foreach ($this->players as $resourceId => $player) {
+                    if ((int) $player['id'] === $participantId) { $resources[$participantId] = $resourceId; break; }
+                }
+            }
+            if (count($resources) !== 2) continue;
+            $state = $snapshot['state'];
+            $inviter = $resources[(int) $state['inviter_user_id']] ?? reset($resources);
+            $invitee = $resources[(int) $state['invitee_user_id']] ?? end($resources);
+            $this->games[$gameId] = [
+                'players' => array_values($resources), 'inviter' => $inviter, 'invitee' => $invitee,
+                'board' => $state['board'], 'currentTurn' => $resources[$snapshot['turn_user_id']],
+                'moves' => (int) ($state['moves'] ?? 0), 'mineCount' => (int) $state['mineCount'], 'spectators' => [],
+            ];
+            unset($this->recoverableGames[$gameId]);
+            foreach ($this->games[$gameId]['players'] as $resourceId) {
+                $connection = $this->getConnectionFromPlayerId($resourceId);
+                if ($connection) $connection->send(json_encode([
+                    'type' => 'game_resumed', 'game_id' => $gameId,
+                    'board' => $this->maskMinesForPlayer($state['board']),
+                    'currentPlayer' => $this->players[$this->games[$gameId]['currentTurn']]['username'],
+                    'mineCount' => (int) $state['mineCount'],
+                    'message' => 'Partie restaurée après le redémarrage du serveur.',
+                ]));
+            }
+            $this->logger->info('Partie restaurée après redémarrage.', ['game_id' => $gameId]);
+        }
+    }
+
     protected function cancelGameAfterDisconnect($gameId, $disconnectedPlayerId, $otherPlayerId): void {
         // Une partie interrompue ne compte ni comme victoire, ni comme égalité,
         // ni comme partie jouée pour les participants.
         $this->decrementGamesPlayed($disconnectedPlayerId);
         $this->decrementGamesPlayed($otherPlayerId);
+        $this->deletePersistedGame($gameId);
         unset($this->games[$gameId]);
+        $this->writeStatusSnapshot();
     }
     
     protected function sendConnectedPlayersList(ConnectionInterface $from) {
@@ -1542,6 +1719,25 @@ class MinesweeperServer implements MessageComponentInterface {
             'source_connection_id' => $sourceConnectionId,
             'player_count' => count($playersList),
         ]);
+        $this->writeStatusSnapshot();
+    }
+
+    protected function writeStatusSnapshot(): void {
+        $path = getenv('STATUS_PATH') ?: '/var/log/minesweeper/status.json';
+        $payload = json_encode([
+            'updatedAt' => date(DATE_ATOM), 'uptimeSeconds' => time() - $this->startedAt,
+            'connections' => $this->clients instanceof Countable ? count($this->clients) : 0,
+            'authenticatedPlayers' => is_array($this->players) ? count($this->players) : 0,
+            'activeGames' => is_array($this->games) ? count($this->games) : 0,
+            'pendingInvitations' => count($this->pendingInvitations),
+            'pendingReconnects' => count($this->pendingReconnects),
+            'actions' => $this->actionCount,
+            'websocketErrors' => $this->websocketErrors,
+            'pendingMoveWrites' => count($this->pendingMoves),
+            'averageMoveSqlMs' => $this->moveSqlBatches > 0 ? round($this->moveSqlTotalMs / $this->moveSqlBatches, 2) : 0,
+        ], JSON_THROW_ON_ERROR);
+        $temp = $path . '.tmp';
+        if (@file_put_contents($temp, $payload, LOCK_EX) !== false) @rename($temp, $path);
     }
 
     protected function getConnectionFromPlayerId($playerId) {
@@ -1651,8 +1847,8 @@ class MinesweeperServer implements MessageComponentInterface {
 
         $minesPlaced = 0;
         while ($minesPlaced < $numMines) {
-            $randX = rand(0, $width - 1);
-            $randY = rand(0, $height - 1);
+            $randX = random_int(0, $width - 1);
+            $randY = random_int(0, $height - 1);
 
             if (!$board[$randX][$randY]['mine']) {
                 $board[$randX][$randY]['mine'] = true;
@@ -1673,23 +1869,43 @@ class MinesweeperServer implements MessageComponentInterface {
         return $board;
     }
 
-    protected function handleGetScores(ConnectionInterface $from) {
+    protected function handleGetScores(ConnectionInterface $from, array $data = []) {
         // Récupérer les scores des joueurs depuis la base de données
         $db = $this->db;
-        $stmt = $db->getPDO()->prepare("
+        $period = in_array($data['period'] ?? 'all', ['week', 'month', 'all'], true) ? $data['period'] : 'all';
+        if ($period === 'all') {
+            $stmt = $db->getPDO()->prepare("
             SELECT username, is_ai, games_won, games_draw, games_played,
             GREATEST(games_played - games_won - games_draw, 0) AS games_lost,
             (games_won * 3 + games_draw) AS ranking_points,
             (games_won / NULLIF(games_played, 0)) * 100 AS win_percentage
             FROM users
             ORDER BY ranking_points DESC, win_percentage DESC, username ASC
-        ");
+            ");
+        } else {
+            $interval = $period === 'week' ? '7 DAY' : '1 MONTH';
+            $stmt = $db->getPDO()->prepare("
+                SELECT u.username, u.is_ai,
+                  COUNT(g.id) AS games_played,
+                  COALESCE(SUM(g.winner_id = u.id), 0) AS games_won,
+                  COALESCE(SUM(g.winner_id IS NULL), 0) AS games_draw,
+                  COALESCE(SUM(g.winner_id IS NOT NULL AND g.winner_id <> u.id), 0) AS games_lost,
+                  (COALESCE(SUM(g.winner_id = u.id), 0) * 3 + COALESCE(SUM(g.winner_id IS NULL), 0)) AS ranking_points,
+                  (COALESCE(SUM(g.winner_id = u.id), 0) / NULLIF(COUNT(g.id), 0)) * 100 AS win_percentage
+                FROM users u
+                LEFT JOIN game_details g ON (g.inviter_id = u.id OR g.invitee_id = u.id)
+                  AND g.status = 'finished' AND g.game_date >= NOW() - INTERVAL {$interval}
+                GROUP BY u.id, u.username, u.is_ai
+                ORDER BY ranking_points DESC, win_percentage DESC, u.username ASC
+            ");
+        }
         $stmt->execute();
         $scores = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
         // Envoyer les scores au client WebSocket
         $from->send(json_encode([
             'type' => 'scores',
+            'period' => $period,
             'players' => $scores
         ]));
     
