@@ -97,6 +97,24 @@ function verify_totp(string $secret, string $code, ?int $timestamp = null): bool
     return false;
 }
 
+function generate_totp_secret(int $bytes = 20): string {
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    $data = random_bytes($bytes);
+    $bits = '';
+    foreach (str_split($data) as $byte) $bits .= str_pad(decbin(ord($byte)), 8, '0', STR_PAD_LEFT);
+    $secret = '';
+    foreach (str_split($bits, 5) as $chunk) {
+        if (strlen($chunk) < 5) $chunk = str_pad($chunk, 5, '0', STR_PAD_RIGHT);
+        $secret .= $alphabet[bindec($chunk)];
+    }
+    return $secret;
+}
+
+function totp_provisioning_uri(string $username, string $secret): string {
+    $label = rawurlencode('Démineur:' . $username);
+    return "otpauth://totp/{$label}?secret={$secret}&issuer=" . rawurlencode('Démineur') . '&algorithm=SHA1&digits=6&period=30';
+}
+
 function validated_ia_name(): string {
     $name = trim((string) ($_POST['iaName'] ?? ''));
     if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $name)) {

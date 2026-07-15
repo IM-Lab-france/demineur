@@ -10,6 +10,8 @@ CREATE TABLE `users` (
   `games_won` int DEFAULT '0',
   `is_ai` tinyint(1) DEFAULT '0',
   `is_disabled` tinyint(1) NOT NULL DEFAULT '0',
+  `totp_secret` varchar(64) COLLATE utf8mb4_bin DEFAULT NULL,
+  `totp_enabled_at` timestamp NULL DEFAULT NULL,
   `games_draw` int DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username_UNIQUE` (`username`),

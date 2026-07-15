@@ -14,7 +14,7 @@
 - Mobile board scrolling, connection status and additional accessibility labels.
 - Persistent hashed WebSocket sessions with expiry and revocation.
 - Batched post-response move history writes and SQL latency metrics.
-- Optional TOTP MFA for administration.
+- Per-administrator TOTP MFA with a locally generated Authenticator QR Code and activation check.
 - Secure CLI-only installer and one-command upgrade finalizer.
 - Automated two-player invitation and first-move integration test.
 - Encrypted off-site backup support through `age`.

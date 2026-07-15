@@ -20,10 +20,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $error = 'Trop de tentatives. Réessayez dans 15 minutes.';
         } else {
         $db = new Database();
-        $totpSecret = (string) ($_ENV['ADMIN_TOTP_SECRET'] ?? getenv('ADMIN_TOTP_SECRET') ?: '');
-        $stmt = $db->getPDO()->prepare('SELECT id, username, password_hash FROM users WHERE username = :username AND is_admin = 1');
+        $totpColumns = $db->getPDO()->query("SHOW COLUMNS FROM users LIKE 'totp_secret'")->fetchAll();
+        $totpFields = $totpColumns ? ', totp_secret, totp_enabled_at' : ", NULL AS totp_secret, NULL AS totp_enabled_at";
+        $stmt = $db->getPDO()->prepare('SELECT id, username, password_hash' . $totpFields . ' FROM users WHERE username = :username AND is_admin = 1');
         $stmt->execute(['username' => $username]);
         $user = $stmt->fetch();
+        $legacyTotpSecret = $totpColumns ? '' : (string) ($_ENV['ADMIN_TOTP_SECRET'] ?? getenv('ADMIN_TOTP_SECRET') ?: '');
+        $totpSecret = $user && !empty($user['totp_enabled_at']) ? (string) $user['totp_secret'] : $legacyTotpSecret;
         if ($user && password_verify($password, $user['password_hash'])
             && ($totpSecret === '' || verify_totp($totpSecret, $totpCode))) {
             session_regenerate_id(true);

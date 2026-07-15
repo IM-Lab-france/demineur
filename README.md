@@ -89,8 +89,6 @@ sudo /var/www/demineur/scripts/finalize-upgrade.sh
 
 Cette commande applique les migrations, synchronise la configuration Apache/systemd, migre Jimbo vers JSON, redémarre les services et vérifie une sauvegarde puis sa restauration.
 
-Le MFA administrateur peut ensuite être activé avec :
-
-```bash
-sudo /var/www/demineur/scripts/enable-admin-mfa.sh
-```
+Chaque administrateur peut activer son propre TOTP depuis `/admin/security.php`.
+Le QR Code est généré localement et un premier code à six chiffres doit être
+validé avant l’activation.

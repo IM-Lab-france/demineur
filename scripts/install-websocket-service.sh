@@ -58,6 +58,15 @@ fi
 if [[ -f "$project_dir/install/migrations/20260715_auth_sessions.sql" ]]; then
     MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260715_auth_sessions.sql"
 fi
+if [[ -f "$project_dir/install/migrations/20260715_admin_totp.sql" ]]; then
+    MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260715_admin_totp.sql"
+    # Conserver une éventuelle activation historique basée sur le secret global.
+    # Le secret Base32 généré par l’ancien outil ne contient que A-Z et 2-7.
+    if [[ "${ADMIN_TOTP_SECRET:-}" =~ ^[A-Z2-7]{16,64}$ ]]; then
+        printf "UPDATE users SET totp_secret='%s', totp_enabled_at=COALESCE(totp_enabled_at,CURRENT_TIMESTAMP) WHERE is_admin=1 AND totp_secret IS NULL;\n" "$ADMIN_TOTP_SECRET" \
+          | MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME"
+    fi
+fi
 if [[ ! -f "$secure_dir/ia_accounts.json" && -f "$legacy_ia_accounts" ]]; then
     install -o root -g minesweeper -m 0640 "$legacy_ia_accounts" "$secure_dir/ia_accounts.json"
     rm -f "$legacy_ia_accounts"
