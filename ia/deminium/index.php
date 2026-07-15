@@ -17,6 +17,7 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
 <head>
     <meta charset="UTF-8">
     <title>Gestion des IA - Démineur Multijoueur</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
     <!-- Inclure Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
     <style>

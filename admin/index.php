@@ -17,6 +17,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <title>Interface d'Administration - Serveur Démineur</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- jQuery (pour AJAX) -->
