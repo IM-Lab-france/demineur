@@ -1,11 +1,11 @@
 # Démineur multijoueur
 
-Application PHP/MySQL utilisant Ratchet pour les parties WebSocket, avec classement, administration protégée et joueurs IA Python.
+Application PHP/MySQL utilisant Ratchet pour les parties WebSocket, avec classement, comptes validés par e-mail, administration protégée par MFA, sauvegardes pilotées depuis l’administration et joueurs IA Python.
 
 ## Prérequis
 
-- Apache 2.4 avec `mod_headers`
-- PHP 8.2 ou plus récent avec PDO MySQL
+- Apache 2.4 avec `proxy`, `proxy_http`, `proxy_wstunnel`, `headers`, `expires` et `rewrite`
+- PHP 8.2 ou plus récent avec PDO MySQL, JSON, mbstring, OpenSSL et POSIX
 - MySQL 8
 - Composer
 - Python 3.11 ou plus récent pour les IA
@@ -113,14 +113,74 @@ Configurer le serveur SMTP avec :
 sudo /var/www/demineur/scripts/configure-mail.sh
 ```
 
-Le mot de passe présent dans le DSN SMTP doit être encodé pour une URL
-(`@` devient `%40`, par exemple). Les pages publiques sont
+Le script est préconfiguré pour le relais Brevo sur `smtp-relay.brevo.com:587`.
+Il demande la clé SMTP sans l’afficher et encode automatiquement les caractères
+réservés du login et de la clé. Utiliser une **clé SMTP Brevo**, jamais une clé
+API ni le mot de passe du compte Brevo. Les pages publiques sont
 `/verify-email.php`, `/resend-verification.php`, `/forgot-password.php` et
 `/reset-password.php`. Les réponses de récupération ne révèlent jamais si une
 adresse existe.
 
 Configurer SPF, DKIM et DMARC pour le domaine d’expédition avant une ouverture
 publique, puis tester le parcours avec une adresse réelle.
+
+Les e-mails de validation possèdent un code de demande unique dans leur objet
+afin d’éviter la confusion lorsque le client mail regroupe plusieurs messages.
+La validation est idempotente : rouvrir un lien ayant déjà validé le compte
+confirme le succès sans rejouer l’opération.
+
+Les journaux du worker sont disponibles avec :
+
+```bash
+sudo journalctl -u minesweeper-mail.service -n 100 --no-pager
+```
+
+## Sauvegardes et restauration
+
+Une sauvegarde SQL est créée chaque nuit par `minesweeper-backup.timer`. Le
+service `minesweeper-backup-verify.timer` importe régulièrement la dernière
+archive dans une base temporaire pour vérifier qu’elle est restaurable.
+
+L’administration permet également de :
+
+- créer immédiatement une sauvegarde ;
+- afficher les archives avec leur date, taille et empreinte SHA-256 ;
+- tester une archive sélectionnée sans modifier la production ;
+- restaurer réellement la base depuis une archive sélectionnée.
+
+La restauration réelle exige le mot de passe administrateur, un code TOTP et la
+confirmation `RESTAURER`. Le service privilégié revérifie lui-même ces
+identifiants. Il vérifie les checksums, arrête temporairement le WebSocket et les
+IA, crée une sauvegarde de secours, teste l’import dans une base intermédiaire,
+restaure la base puis redémarre et contrôle les services.
+
+Les secrets actuels ne sont pas remplacés par ceux de l’archive. Les accès MFA
+des administrateurs sont conservés, les comptes IA sont réalignés sur
+`/var/www/secure/ia_accounts.json`, et les anciennes sessions, files e-mail et
+jetons de compte restaurés sont révoqués. Les joueurs doivent donc se
+reconnecter après une restauration.
+
+La copie `secure-config.tar.gz` est destinée à la reprise après sinistre en
+ligne de commande. Elle n’est jamais restaurée depuis le navigateur.
+
+Journaux utiles :
+
+```bash
+sudo journalctl -u minesweeper-backup.service -n 100 --no-pager
+sudo journalctl -u minesweeper-backup-verify.service -n 100 --no-pager
+sudo journalctl -u minesweeper-backup-admin.service -n 100 --no-pager
+```
+
+La restauration de production en ligne de commande reste disponible pour une
+intervention locale explicitement contrôlée :
+
+```bash
+sudo /var/www/demineur/scripts/restore-backup.sh 20260715T160727Z
+```
+
+Remplacer l’identifiant par celui d’une archive existante dans
+`/var/backups/minesweeper`. Cette commande est destructive et crée elle aussi
+un point de retour avant l’import.
 
 ## Supervision et copie hors serveur
 
