@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../../admin/bootstrap.php';
+require_admin();
 header('Content-Type: application/json');
 // status.php
 $pluginsDir = './plugins';

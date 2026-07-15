@@ -36,8 +36,9 @@ for arg in sys.argv:
     elif arg.startswith('--model='):
         model_name = arg.split('=')[1]  # Extraire le nom du modèle choisi
 
-# Définir le dossier des logs
-log_dir = os.path.join(os.path.dirname(__file__), 'plugins', model_name, 'logs')
+# Définir le dossier des logs hors du DocumentRoot en production.
+log_root = os.environ.get('IA_LOG_ROOT')
+log_dir = os.path.join(log_root, model_name) if log_root else os.path.join(os.path.dirname(__file__), 'plugins', model_name, 'logs')
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
@@ -82,10 +83,15 @@ def load_module(module_name, module_path):
 move_strategy_module = load_module('move_strategy', os.path.join(plugins_dir, 'move_strategy.py'))
 
 # Créer une instance de MoveStrategy
+legacy_memory = os.path.join(plugins_dir, 'memory.pkl')
+if os.path.isfile(legacy_memory):
+    # L'ancien format pickle permet l'exécution de code au chargement. Il est neutralisé.
+    os.remove(legacy_memory)
 move_strategy = move_strategy_module.MoveStrategy()
 
 # Chargement des comptes IA
-with open('ia_accounts.json', 'r') as f:
+accounts_file = os.environ.get('IA_ACCOUNTS_FILE', '/var/www/secure/ia_accounts.json')
+with open(accounts_file, 'r', encoding='utf-8') as f:
     ia_accounts = json.load(f)
 
 # Trouver le compte IA correspondant au modèle
@@ -102,7 +108,8 @@ if not ai_account:
     sys.exit(1)
 
 async def connect_to_server(uri):
-    async with websockets.connect(uri) as websocket:
+    origin = os.environ.get('WS_ORIGIN', 'http://localhost')
+    async with websockets.connect(uri, origin=origin, max_size=65536, open_timeout=10) as websocket:
         await attempt_login(websocket)
 
 async def attempt_login(websocket):
@@ -155,7 +162,10 @@ async def handle_server_messages(websocket, username):
 
         elif data['type'] == 'game_start':
             print("Partie commencée !")
-            move_strategy.beginGame(data['board'])
+            try:
+                move_strategy.beginGame(data['board'], data.get('mineCount'))
+            except TypeError:
+                move_strategy.beginGame(data['board'])
             current_game_id = data['game_id']
             display_board(data['board'])
 
@@ -174,6 +184,7 @@ async def handle_server_messages(websocket, username):
                 print("En attente de mon tour...")
 
         elif data['type'] == 'game_over':
+            current_game_id = None
             print(f"Partie terminée. Vainqueur : {data['winner_name']}")
             display_board(data['board'])
 
@@ -181,7 +192,8 @@ async def handle_server_messages(websocket, username):
             move_strategy.endGame(data['winner_name'], username)
             
             # Réinviter de nouveau l'adversaire
-            await invite_player(websocket, invited_player_id)
+            if invite_automatically and invited_player_id is not None:
+                await invite_player(websocket, invited_player_id)
 
         elif data['type'] == 'connected_players':
             if invite_automatically:
@@ -208,6 +220,9 @@ async def search_and_invite_player(websocket, players, username):
     print("Aucun joueur 'ia_' approprié trouvé pour l'invitation.")
 
 async def invite_player(websocket, player_id):
+    if player_id is None:
+        print("Invitation ignorée : aucun adversaire disponible.")
+        return
     invite_message = {
         'type': 'invite',
         'invitee': player_id,
@@ -234,7 +249,7 @@ async def make_move(websocket, board):
         return
 
     # Pause avant d'envoyer le coup
-    time.sleep(pause_duration / 1000)
+    await asyncio.sleep(pause_duration / 1000)
 
     move_message = {
         'type': 'reveal_cell',
@@ -287,7 +302,7 @@ def display_board(board):
 
 
 if __name__ == "__main__":
-    uri = "ws://192.168.1.170:8080"
+    uri = os.environ.get('MINESWEEPER_WS_URL', 'ws://127.0.0.1:8080')
 
     # Exécuter la connexion au serveur
     asyncio.run(connect_to_server(uri))

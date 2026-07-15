@@ -1,8 +1,9 @@
 <?php
 // Vérifiez si le répertoire 'vendor' existe
 if (!is_dir(__DIR__ . '/vendor')) {
-    // Redirigez vers la page d'installation si le répertoire 'vendor' n'existe pas
-    header('Location: /install/');
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo 'Application non installée. Exécutez la procédure CLI décrite dans README.md.';
     exit;
 }
 ?>
@@ -11,14 +12,16 @@ if (!is_dir(__DIR__ . '/vendor')) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="ws-url" content="<?= htmlspecialchars(getenv('WS_PUBLIC_URL') ?: '/ws', ENT_QUOTES, 'UTF-8') ?>">
     <title>Démineur Multijoueur</title>
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet"> <!-- Bootstrap -->
+    <link rel="preload" href="img/background2.webp" as="image" type="image/webp" fetchpriority="high">
     <link rel="stylesheet" href="styles.css"> <!-- Lien vers le fichier CSS -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,900;1,300;1,400;1,500&display=swap" rel="stylesheet">
     <!-- Ajout du favicon -->
-    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
 </head>
 <body class="bg-light"> <!-- Change background to a light color -->
 
@@ -30,13 +33,10 @@ if (!is_dir(__DIR__ . '/vendor')) {
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav ml-auto">
                 <li class="nav-item">
-                    <a class="nav-link" href="index.html">Jouer</a>
+                    <a class="nav-link" href="/">Jouer</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" href="scores.html">Scores</a>
-                </li>
-                <li class="nav-item"></li>
-                    <a class="nav-link" href="spectators.php">Spectateurs</a>
                 </li>
                 <li>
                     <button id="muteButton" class="btn btn-light">🔊</button>
@@ -65,6 +65,9 @@ if (!is_dir(__DIR__ . '/vendor')) {
                     💣 Évitez de cliquer sur les mines, sauf si vous voulez voir ce qui se passe...
                 </li>
                 <li>
+                    🤝 Si toutes les cases sûres sont révélées sans explosion, la partie se termine par une égalité.
+                </li>
+                <li>
                     🔄 Le jeu se joue à tour de rôle avec votre adversaire. Ne le faites pas attendre trop longtemps, il pourrait s'impatienter.
                 </li>
                 <li>
@@ -79,7 +82,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
         </div>
     </div>
     <!-- Modal de Connexion -->
-    <div id="loginModal" class="modal">
+    <div id="loginModal" class="modal hidden">
         <div class="modal-content">
             <img src="img/demineur.png">
             <p>Connectez-vous pour rejoindre l'aventure.</p>
@@ -182,10 +185,9 @@ if (!is_dir(__DIR__ . '/vendor')) {
     <div id="helpIcon" class="help-icon hidden" role="button" aria-label="Afficher l'aide" tabindex="0">❓</div>
 
     <!-- jQuery, Popper.js, and Bootstrap JS -->
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.1/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.0.0/crypto-js.min.js"></script>
-    <script src="script.js"></script> <!-- Lien vers le fichier JavaScript -->
+    <script defer src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.1/dist/umd/popper.min.js"></script>
+    <script defer src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script defer src="script.js"></script> <!-- Lien vers le fichier JavaScript -->
 </body>
 </html>

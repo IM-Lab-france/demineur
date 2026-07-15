@@ -6,7 +6,21 @@ window.onload = function() {
 
 // Connexion WebSocket
 function connectWebSocket() {
-    socket = new WebSocket('wss://fozzy.fr:9443');
+    const configuredUrl = document.querySelector('meta[name="ws-url"]')?.content?.trim();
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let wsUrl;
+
+    if (!configuredUrl || configuredUrl.startsWith('/')) {
+        wsUrl = `${protocol}//${window.location.host}${configuredUrl || '/ws'}`;
+    } else {
+        const parsedUrl = new URL(configuredUrl, window.location.href);
+        if (window.location.protocol === 'https:' && parsedUrl.protocol === 'ws:') {
+            parsedUrl.protocol = 'wss:';
+        }
+        wsUrl = parsedUrl.toString();
+    }
+
+    socket = new WebSocket(wsUrl);
 
     socket.onopen = function() {
         console.log('WebSocket ouvert');
@@ -19,7 +33,7 @@ function connectWebSocket() {
 
         // Traiter le message envoyé par le serveur
         switch (data.type) {
-            case 'connected_players': // Le type de message envoyé par le serveur pour les scores
+            case 'scores':
                 refreshScores(data.players); // Rafraîchir l'affichage des scores
                 break;
 
@@ -33,6 +47,11 @@ function connectWebSocket() {
 
     socket.onclose = function() {
         console.log('WebSocket fermé');
+        showScoresMessage('Connexion au serveur de scores impossible.');
+    };
+
+    socket.onerror = function() {
+        showScoresMessage('Erreur de connexion au serveur de scores.');
     };
 }
 
@@ -46,6 +65,11 @@ function refreshScores(players) {
     const scoresTable = document.getElementById('scoresTable');
     scoresTable.innerHTML = ''; // Vider le tableau avant de l'actualiser
 
+    if (!Array.isArray(players) || players.length === 0) {
+        showScoresMessage('Aucun score disponible.');
+        return;
+    }
+
     players.forEach(player => {
         const row = document.createElement('tr');
         const gamesPlayed = player.games_played || 0; // S'assurer que le nombre de parties jouées est défini
@@ -57,15 +81,36 @@ function refreshScores(players) {
         }
 
         // Utiliser toFixed pour afficher deux décimales
-        row.innerHTML = `
-            <td>${player.username}</td>
-            <td>${gamesPlayed}</td>
-            <td>${player.games_won || 0}</td>
-            <td><div class="progress">
-                    <div class="progress-bar bg-success" role="progressbar" style="width: ${winPercentage.toFixed(2)}%;" aria-valuenow="${winPercentage.toFixed(2)}" aria-valuemin="0" aria-valuemax="100">${winPercentage.toFixed(2)}%</div>
-                </div>
-            </td>
-        `;
+        const usernameCell = row.insertCell();
+        usernameCell.textContent = player.username;
+        row.insertCell().textContent = gamesPlayed;
+        row.insertCell().textContent = player.games_won || 0;
+        row.insertCell().textContent = player.games_draw || 0;
+        const percentageCell = row.insertCell();
+        const progress = document.createElement('div');
+        progress.className = 'progress';
+        const bar = document.createElement('div');
+        bar.className = 'progress-bar bg-success';
+        bar.setAttribute('role', 'progressbar');
+        const percentage = Math.max(0, Math.min(100, winPercentage));
+        bar.style.width = `${percentage.toFixed(2)}%`;
+        bar.setAttribute('aria-valuenow', percentage.toFixed(2));
+        bar.setAttribute('aria-valuemin', '0');
+        bar.setAttribute('aria-valuemax', '100');
+        bar.textContent = `${percentage.toFixed(2)}%`;
+        progress.appendChild(bar);
+        percentageCell.appendChild(progress);
         scoresTable.appendChild(row);
     });
+}
+
+function showScoresMessage(message) {
+    const scoresTable = document.getElementById('scoresTable');
+    scoresTable.innerHTML = '';
+    const row = document.createElement('tr');
+    const cell = row.insertCell();
+    cell.colSpan = 5;
+    cell.className = 'text-center text-muted';
+    cell.textContent = message;
+    scoresTable.appendChild(row);
 }

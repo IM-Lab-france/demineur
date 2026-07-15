@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../../admin/bootstrap.php';
+require_admin(false);
+$csrf = csrf_token();
 // index.php
 $pluginsDir = './plugins';
 
@@ -44,6 +47,7 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                     <li class="nav-item">
                         <a class="nav-link" href="/ia/deminium">Démineur IA</a>
                     </li>
+                    <li class="nav-item"><form method="post" action="/admin/logout.php"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>"><button class="btn btn-link nav-link" type="submit">Déconnexion</button></form></li>
                 </ul>
             </div>
         </div>
@@ -181,6 +185,7 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
         
         
         $(document).ready(function () {
+            $.ajaxSetup({ headers: { 'X-CSRF-Token': <?= json_encode($csrf) ?> } });
 
             // Gestion de l'ouverture et de la fermeture du menu burger
             const navbarToggler = document.querySelector(".navbar-toggler");
@@ -218,7 +223,9 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
             function showToast(message, type = 'info', log = '') {
                 var $toast = $('#toast-template').clone();
                 $toast.removeAttr('id').addClass('bg-' + type + ' text-white');
-                $toast.find('.toast-body').html(message + (log ? "<br><pre>" + log + "</pre>" : ''));
+                const body = $toast.find('.toast-body').empty();
+                body.append(document.createTextNode(String(message)));
+                if (log) body.append($('<pre>').text(String(log)));
                 
                 // Ajouter au conteneur et afficher
                 $('#toast-container').append($toast);

@@ -11,8 +11,9 @@ CREATE TABLE `users` (
   `is_ai` tinyint(1) DEFAULT '0',
   `games_draw` int DEFAULT '0',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `username_UNIQUE` (`username`)
-) ENGINE=InnoDB AUTO_INCREMENT=152 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  UNIQUE KEY `username_UNIQUE` (`username`),
+  CONSTRAINT `chk_user_stats` CHECK (`games_played` >= 0 AND `games_won` >= 0 AND `games_draw` >= 0 AND `games_won` <= `games_played` AND `games_draw` <= `games_played`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `invitations` (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -21,7 +22,11 @@ CREATE TABLE `invitations` (
   `status` enum('pending','accepted','rejected') COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
   `game_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_invitations_from` (`from_user_id`),
+  KEY `idx_invitations_to` (`to_user_id`),
+  CONSTRAINT `fk_invitations_from` FOREIGN KEY (`from_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_invitations_to` FOREIGN KEY (`to_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `game_details` (
@@ -33,8 +38,15 @@ CREATE TABLE `game_details` (
   `game_date` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `moves` int NOT NULL,
   `explosion_area` json NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=718 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `status` enum('finished','cancelled','forfeit','server_interrupted') NOT NULL DEFAULT 'finished',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_game_details_game_id` (`game_id`),
+  KEY `idx_game_details_winner` (`winner_id`),
+  KEY `idx_game_details_date` (`game_date`),
+  CONSTRAINT `fk_game_details_inviter` FOREIGN KEY (`inviter_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_game_details_invitee` FOREIGN KEY (`invitee_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_game_details_winner` FOREIGN KEY (`winner_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 
@@ -46,6 +58,7 @@ CREATE TABLE `game_moves` (
   `explosion_area` json NOT NULL,
   `result` tinyint(1) NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=9502 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+  PRIMARY KEY (`id`),
+  KEY `idx_game_moves_game_id` (`game_id`),
+  KEY `idx_game_moves_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

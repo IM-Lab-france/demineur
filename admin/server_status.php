@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/bootstrap.php';
+require_admin();
 
 // server_status.php
 
@@ -6,12 +8,12 @@ header('Content-Type: application/json');
 
 function isServerRunning() {
     $output = [];
-    exec("ps aux | grep 'server.php' | grep -v 'grep'", $output);
-    return count($output) > 0;
+    exec('/usr/bin/systemctl is-active --quiet minesweeper-websocket.service', $output, $code);
+    return $code === 0;
 }
 
 function getConnectedPlayers() {
-    return rand(0, 10); // Remplacer par une vraie logique
+    return null;
 }
 
 $status = [

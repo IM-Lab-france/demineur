@@ -1,13 +1,19 @@
 <?php
+require_once __DIR__ . '/../../admin/bootstrap.php';
+require_admin();
+require_post();
+require_csrf();
 header('Content-Type: application/json');
 
 // initialize.php
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $iaName = $_POST['iaName'];
-    $pluginsDir = './plugins';
-    $iaPath = $pluginsDir . '/' . $iaName;
+    $iaName = validated_ia_name();
+    $iaPath = validated_ia_path($iaName);
     $envPath = $iaPath . '/env';
-    $logDir = $iaPath . '/logs';
+    $secureLogRoot = '/var/log/minesweeper/ai';
+    $logDir = is_dir($secureLogRoot) && is_writable($secureLogRoot)
+        ? $secureLogRoot . '/' . $iaName
+        : $iaPath . '/logs';
 
     // Vérifier si l'IA existe
     if (!is_dir($iaPath)) {
@@ -17,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Créer le dossier des logs s'il n'existe pas
     if (!is_dir($logDir)) {
-        mkdir($logDir, 0777, true);
+        mkdir($logDir, 0750, true);
     }
 
     $logFile = $logDir . '/initialize.log';
@@ -26,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     file_put_contents($logFile, "Initialisation de l'IA : $iaName\n");
 
     // Créer l'environnement virtuel
-    $command = "python3 -m venv $envPath 2>&1";
+    $command = 'python3 -m venv ' . escapeshellarg($envPath) . ' 2>&1';
     exec($command, $output, $returnVar);
     file_put_contents($logFile, "[ENV CREATION] " . implode("\n", $output), FILE_APPEND);
 
@@ -36,9 +42,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Installer les dépendances
-    $requirementsFile = $iaPath . '/requirements.txt';
+    $requirementsFile = __DIR__ . '/requirements.lock';
     if (file_exists($requirementsFile)) {
-        $command = "$envPath/bin/pip install -r $requirementsFile 2>&1";
+        $command = escapeshellarg($envPath . '/bin/pip') . ' install --require-virtualenv -r ' . escapeshellarg($requirementsFile) . ' 2>&1';
         exec($command, $output, $returnVar);
         file_put_contents($logFile, "[DEPENDENCIES INSTALLATION] " . implode("\n", $output), FILE_APPEND);
 
@@ -49,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Vérification des dépendances
-    $command = "$envPath/bin/pip check 2>&1";
+    $command = escapeshellarg($envPath . '/bin/pip') . ' check 2>&1';
     exec($command, $output, $returnVar);
     file_put_contents($logFile, "[DEPENDENCIES CHECK] " . implode("\n", $output), FILE_APPEND);
 

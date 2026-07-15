@@ -1,4 +1,8 @@
 <?php
+require_once __DIR__ . '/../../admin/bootstrap.php';
+require_admin();
+require_post();
+require_csrf();
 // create_ia.php
 
 require '../../vendor/autoload.php'; // Assurez-vous que le chemin vers autoload.php est correct
@@ -10,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$iaName = $_POST['iaName'] ?? '';
+$iaName = validated_ia_name();
 $iaPassword = $_POST['iaPassword'] ?? '';
 
 if (empty($iaName) || empty($iaPassword)) {
@@ -19,23 +23,13 @@ if (empty($iaName) || empty($iaPassword)) {
 }
 
 // Validation du nom de l'IA
-if (!preg_match('/^[a-zA-Z0-9_-]+$/', $iaName)) {
-    echo json_encode(['success' => false, 'message' => 'Nom d\'IA invalide.']);
-    exit;
-}
-
 $username = 'ia_' . $iaName;
-$accountsFile = './ia_accounts.json';
+$accountsFile = ia_accounts_file();
 
 // Vérifier si le nom d'utilisateur existe déjà dans ia_accounts.json
-$accountsData = [];
+$accountsData = read_ia_accounts();
 
-if (file_exists($accountsFile)) {
-    $accountsData = json_decode(file_get_contents($accountsFile), true);
-    if ($accountsData === null) {
-        echo json_encode(['success' => false, 'message' => 'Erreur lors de la lecture du fichier des comptes : JSON invalide ou fichier inaccessible.']);
-        exit;
-    }
+if ($accountsData) {
 
     foreach ($accountsData as $account) {
         if ($account['username'] === $username) {
@@ -144,7 +138,9 @@ $newAccount = [
 $accountsData[] = $newAccount;
 
 // Sauvegarder le fichier ia_accounts.json
-if (file_put_contents($accountsFile, json_encode($accountsData, JSON_PRETTY_PRINT)) === false) {
+try {
+    write_ia_accounts($accountsData);
+} catch (Throwable $e) {
     echo json_encode(['success' => false, 'message' => 'Erreur lors de la sauvegarde du fichier des comptes. Vérifiez les permissions d\'écriture.']);
     exit;
 }

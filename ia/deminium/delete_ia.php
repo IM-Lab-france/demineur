@@ -1,6 +1,10 @@
 <?php
+require_once __DIR__ . '/../../admin/bootstrap.php';
+require_admin();
+require_post();
+require_csrf();
 // delete_ia.php
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 require '../../vendor/autoload.php';
@@ -12,27 +16,22 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$iaName = $_POST['iaName'] ?? '';
+$iaName = validated_ia_name();
 
 if (empty($iaName)) {
     echo json_encode(['success' => false, 'message' => 'Le nom de l\'IA est requis.']);
     exit;
 }
 
-if (!preg_match('/^[a-zA-Z0-9_-]+$/', $iaName)) {
-    echo json_encode(['success' => false, 'message' => 'Nom d\'IA invalide.']);
-    exit;
-}
-
 $username = 'ia_' . $iaName;
-$accountsFile = './ia_accounts.json';
+$accountsFile = ia_accounts_file();
 
 if (!file_exists($accountsFile)) {
     echo json_encode(['success' => false, 'message' => 'Le fichier des comptes IA est introuvable.']);
     exit;
 }
 
-$accountsData = json_decode(file_get_contents($accountsFile), true);
+$accountsData = read_ia_accounts();
 
 if ($accountsData === null) {
     echo json_encode(['success' => false, 'message' => 'Erreur lors de la lecture du fichier des comptes.']);
@@ -55,7 +54,9 @@ if ($iaIndex === null) {
 unset($accountsData[$iaIndex]);
 $accountsData = array_values($accountsData);
 
-if (file_put_contents($accountsFile, json_encode($accountsData, JSON_PRETTY_PRINT)) === false) {
+try {
+    write_ia_accounts($accountsData);
+} catch (Throwable $e) {
     echo json_encode(['success' => false, 'message' => 'Erreur lors de la mise à jour du fichier des comptes.']);
     exit;
 }
@@ -92,11 +93,6 @@ function deleteDirectory($dir) {
 
         $path = $dir . DIRECTORY_SEPARATOR . $item;
 
-        // Essayer de forcer les permissions de suppression
-        if (!is_writable($path)) {
-            @chmod($path, 0777); // Modifier les permissions si elles sont restreintes
-        }
-
         if (is_dir($path)) {
             if (!deleteDirectory($path)) {
                 echo json_encode(['success' => false, 'message' => "Impossible de supprimer le sous-répertoire : $path"]);
@@ -110,11 +106,6 @@ function deleteDirectory($dir) {
         }
     }
 
-    // Changer les permissions du répertoire principal avant suppression
-    if (!is_writable($dir)) {
-        @chmod($dir, 0777);
-    }
-
     return @rmdir($dir);
 }
 
@@ -123,6 +114,11 @@ if (is_dir($iaDir)) {
         echo json_encode(['success' => false, 'message' => 'Erreur lors de la suppression complète du répertoire de l\'IA.']);
         exit;
     }
+}
+
+$secureLogDir = '/var/log/minesweeper/ai/' . $iaName;
+if (is_dir($secureLogDir)) {
+    deleteDirectory($secureLogDir);
 }
 
 echo json_encode(['success' => true, 'message' => 'IA supprimée avec succès.']);

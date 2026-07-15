@@ -1,33 +1,69 @@
-# Multiplayer Minesweeper
+# Démineur multijoueur
 
+Application PHP/MySQL utilisant Ratchet pour les parties WebSocket, avec classement, administration protégée et joueurs IA Python.
 
-pré requis : 
-- apache2
-- mysql
-- php
-- configuration 
+## Prérequis
 
-```apache
-<VirtualHost *:80>
-    ServerName <domaine>
-    DocumentRoot <repertoire du site>
+- Apache 2.4 avec `mod_headers`
+- PHP 8.2 ou plus récent avec PDO MySQL
+- MySQL 8
+- Composer
+- Python 3.11 ou plus récent pour les IA
+- systemd pour le service WebSocket de production
 
-    <Directory <repertoire du site>>
-        Options Indexes FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
+## Configuration
 
-    ErrorLog ${APACHE_LOG_DIR}/demineur_error.log
-    CustomLog ${APACHE_LOG_DIR}/demineur_access.log combined
-</VirtualHost>
+Copier `.env.example` vers un fichier `.env` placé hors du `DocumentRoot`, par exemple `/var/www/secure/.env`, puis définir `APP_CONFIG_DIR=/var/www/secure` dans l’environnement du service.
+
+Le serveur WebSocket écoute par défaut uniquement sur `127.0.0.1:8080`. En production, l’exposer à travers un reverse proxy HTTPS et définir :
+
+```dotenv
+WS_PUBLIC_URL=wss://example.com/ws
+WS_ALLOWED_ORIGINS=example.com
 ```
 
-# Configuration de la base de données
-Le serveur mysql doit etre actif avec un schéma et un utilisateur permettant l'accès.
+## Installation
 
+L’installateur web est désactivé par défaut. Installer les dépendances et importer le schéma depuis la ligne de commande :
 
-# configuration du serveur
-Ouvrir un navigateur et naviguer vers votre site. Le programme d'installation préparera le serveur. 
-Il est important de creer un fichier .htpasswd dans le repertoire admin pour le proteger.
+```bash
+composer install --no-dev --classmap-authoritative
+mysql -u root -p minesweeper < install/install.sql
+```
 
+Pour une base existante, examiner puis appliquer `install/migrations/20260714_hardening.sql` après sauvegarde.
+
+Créer le premier utilisateur administrateur avec un mot de passe bcrypt, puis accéder à `/admin/login.php`. Toutes les opérations administratives nécessitent une session administrateur et un jeton CSRF.
+
+## Service WebSocket
+
+Adapter puis installer `deploy/systemd/minesweeper-websocket.service` :
+
+```bash
+sudo /var/www/demineur/scripts/install-websocket-service.sh
+```
+
+Le compte du serveur web doit recevoir une autorisation systemd strictement limitée si les boutons démarrer/arrêter sont conservés.
+
+Les événements du backend sont écrits dans `/var/log/minesweeper/backend-AAAA-MM-JJ.log`
+et dans le journal systemd. Pour diagnostiquer un démarrage ou suivre les actions du jeu :
+
+```bash
+journalctl -u minesweeper-websocket.service -n 200 --no-pager
+journalctl -u minesweeper-websocket.service -f
+tail -f /var/log/minesweeper/backend-$(date +%F).log
+```
+
+Les mots de passe ne sont jamais ajoutés aux journaux. Chaque demande de démarrage faite
+depuis l'administration reçoit une référence consultable dans `/var/log/minesweeper/monitor-AAAA-MM-JJ.log`.
+
+## Vérifications
+
+```bash
+php -l server.php
+php tests/server_unit.php
+composer audit
+cd admin && npm audit
+```
+
+Ne jamais publier `.env`, `ia_accounts.json`, les journaux, PID, fichiers pickle ou sauvegardes de base de données.

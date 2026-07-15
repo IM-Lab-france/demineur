@@ -1,4 +1,8 @@
 <?php
+require_once __DIR__ . '/../../admin/bootstrap.php';
+require_admin();
+require_post();
+require_csrf();
 // check_ia_name.php
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -6,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$iaName = $_POST['iaName'] ?? '';
+$iaName = validated_ia_name();
 
 if (empty($iaName)) {
     echo json_encode(['exists' => false, 'message' => 'Le nom de l\'IA est requis.']);
@@ -14,12 +18,7 @@ if (empty($iaName)) {
 }
 
 // Validation du nom de l'IA
-if (!preg_match('/^[a-zA-Z0-9_-]+$/', $iaName)) {
-    echo json_encode(['exists' => false, 'message' => 'Nom d\'IA invalide.']);
-    exit;
-}
-
-$accountsFile = '/var/www/html/ia/deminium/ia_accounts.json';
+$accountsFile = ia_accounts_file();
 
 // Vérifier si le fichier existe
 if (!file_exists($accountsFile)) {

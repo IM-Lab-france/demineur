@@ -10,18 +10,26 @@ let currentInvitationId = null;
 let errorDiv = null;
 let retryInterval = 5000;
 let keepAliveInterval; 
+let reconnectTimeout;
 let isReconnecting = false;
 
 let isMuted = false;
 
 
 // gestion des sons
-const soundClick = new Audio('sounds/click.mp3');
-const soundMine = new Audio('sounds/mine.mp3');
-const soundFlag = new Audio('sounds/flag.mp3');
-const soundWin = new Audio('sounds/win.mp3');
-const soundLose = new Audio('sounds/lose.mp3');
-const soundTie = new Audio('sounds/tie.mp3');
+function createSound(source) {
+    const audio = new Audio();
+    audio.preload = 'none';
+    audio.src = source;
+    return audio;
+}
+
+const soundClick = createSound('sounds/click.mp3');
+const soundMine = createSound('sounds/mine.mp3');
+const soundFlag = createSound('sounds/flag.mp3');
+const soundWin = createSound('sounds/win.mp3');
+const soundLose = createSound('sounds/lose.mp3');
+const soundTie = createSound('sounds/tie.mp3');
 const muteButton = document.getElementById('muteButton');
 
 const loginModal = document.getElementById('loginModal');
@@ -47,10 +55,8 @@ function showRegisterModal() {
     registerModal.classList.remove('hidden');
 }
 
-// Afficher le modal de connexion au chargement
-window.addEventListener('load', () => {
-    showLoginModal();
-});
+// La connexion WebSocket décide d'afficher ce formulaire uniquement lorsqu'il
+// n'existe aucune session à reprendre.
 
 // Écouteurs pour les liens
 showRegisterModalLink.addEventListener('click', (e) => {
@@ -127,13 +133,7 @@ function showHelpIcon() {
 
 // Fonction pour afficher les messages WebSocket dans la div messages
 function logMessage(message) {
-    const messageDiv = document.getElementById('messages');
-    const messageElement = document.createElement('p');
-    messageElement.textContent = message;
-    messageDiv.appendChild(messageElement);
-    console.log(message);
-    // Faire défiler automatiquement vers le bas quand un nouveau message est ajouté
-    messageDiv.scrollTop = messageDiv.scrollHeight;
+    if (window.DEBUG_MINESWEEPER) console.debug(message);
 }
 
 // Connexion WebSocket
@@ -142,21 +142,26 @@ function connectWebSocket() {
     // Récupérer le nom d'hôte (domaine ou IP)
     const hostname = window.location.hostname;
 
-    // Déterminer le protocole WebSocket et le port en fonction de l'URL
-    let wsProtocol = 'ws';
-    let wsPort = '8080'; // Par défaut pour les IP locales
+    // Utiliser le protocole réellement visible par le navigateur. Le reverse
+    // proxy peut parler HTTP à Apache même si la page publique est en HTTPS.
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
     // Si l'hôte est un domaine (fozzy.fr par exemple), utiliser wss (WebSocket sécurisé) et le port 9443
     console.log("Tentative de connexion au server : " + hostname)
     
-    if (hostname === 'fozzy.fr') {
-        wsProtocol = 'wss';
-        wsPort = '9443';
-
-    }
-
     // Construire l'URL du WebSocket
-    const wsUrl = `${wsProtocol}://${hostname}:${wsPort}`;
+    const configuredUrl = document.querySelector('meta[name="ws-url"]')?.content?.trim();
+    let wsUrl;
+    if (!configuredUrl || configuredUrl.startsWith('/')) {
+        wsUrl = `${wsProtocol}//${window.location.host}${configuredUrl || '/ws'}`;
+    } else {
+        const parsedUrl = new URL(configuredUrl, window.location.href);
+        // Empêcher le mixed content même si WS_PUBLIC_URL contient encore ws://.
+        if (window.location.protocol === 'https:' && parsedUrl.protocol === 'ws:') {
+            parsedUrl.protocol = 'wss:';
+        }
+        wsUrl = parsedUrl.toString();
+    }
     console.log("URL du WebSocket construite : " + wsUrl);
 
     try {
@@ -173,8 +178,15 @@ function connectWebSocket() {
         console.log("WebSocket connecté : " + wsUrl);
         connected = true;
         isReconnecting = false;
+        clearTimeout(reconnectTimeout);
+        clearInterval(keepAliveInterval);
         hideConnectionError(); // Afficher le formulaire de connexion
-        showLoginModal();
+        const sessionToken = sessionStorage.getItem('minesweeperSessionToken');
+        if (sessionToken) {
+            socket.send(JSON.stringify({ type: 'resume_session', sessionToken }));
+        } else {
+            showLoginModal();
+        }
 
         keepAliveInterval = setInterval(function() {
             if (socket.readyState === WebSocket.OPEN) {
@@ -194,14 +206,16 @@ function connectWebSocket() {
                 break;
 
             case 'login_failed':
-                // Afficher le message d'erreur et réinitialiser les inputs
-                loginError.textContent = 'Nom d\'utilisateur ou mot de passe incorrect.';
-                document.getElementById('username').value = '';
-                document.getElementById('password').value = '';
+                loginError.textContent = data.message || 'Nom d\'utilisateur ou mot de passe incorrect.';
+                document.getElementById('loginPassword').value = '';
                 break;
 
             case 'login_success':
                 currentPlayerId = data.playerId; 
+                username = data.username;
+                if (data.sessionToken) {
+                    sessionStorage.setItem('minesweeperSessionToken', data.sessionToken);
+                }
                 // Masquer la section de connexion et afficher la liste des joueurs
                 hideModal(loginModal); 
                 document.getElementById('game').style.display = 'block';
@@ -211,6 +225,11 @@ function connectWebSocket() {
                 document.getElementById('logoutLink').style.display = 'block';
                 document.getElementById('availableUser').style.display = 'block';
                 refreshPlayersList(data.players);
+                break;
+
+            case 'resume_failed':
+                sessionStorage.removeItem('minesweeperSessionToken');
+                showLoginModal();
                 break;
 
             case 'register_success':
@@ -251,7 +270,7 @@ function connectWebSocket() {
                 break;
 
             case 'update_board':
-                displayGameBoard(data.board);
+                updateGameBoard(data.board);
                 // Mettre à jour le nom du joueur dont c'est le tour
                 currentPlayerDisplay = document.getElementById('currentTurnDisplay');
                 currentPlayerDisplay.textContent = 'Tour actuel: ' + data.currentPlayer; // Affiche le joueur actuel
@@ -280,8 +299,6 @@ function connectWebSocket() {
                 displayGameBoard(data.board, data.losingCell);
                 showWinnerModal(data.winner, data.game_id);
             
-                // Révéler toutes les cellules (mines et chiffres)
-                revealAllCells(data.board);
                 hideHelpIcon();
                 break;
                 // Ajout de la gestion de la déconnexion d'un joueur
@@ -294,6 +311,7 @@ function connectWebSocket() {
                 break;
 
             case 'error':
+                clearPendingCells();
             if (data.message === "Ce n'est pas votre tour de jouer.") {
                     showNotYourTurnPopup();
                 }
@@ -308,7 +326,6 @@ function connectWebSocket() {
     socket.onerror = function() {
         logMessage('Impossible de se connecter au serveur WebSocket.');
         showConnectionError();
-        attemptReconnect(); // Essayer de se reconnecter
     };
 
     socket.onclose = function() {
@@ -319,10 +336,6 @@ function connectWebSocket() {
         attemptReconnect(); // Essayer de se reconnecter
     };
 
-    // Vérifier l'état du WebSocket périodiquement pour plus de détails
-    setInterval(() => {
-        console.log("État périodique du WebSocket : ", socket.readyState);
-    }, 5000);
 }
 
 
@@ -341,13 +354,19 @@ function showLoginForm() {
 function attemptReconnect() {
     if (!connected && !isReconnecting) { // Vérifie si déjà en cours de reconnexion
         isReconnecting = true; // Empêche les nouvelles tentatives pendant la reconnexion
-        setTimeout(function() {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(function() {
             logMessage('Tentative de reconnexion au serveur...');
+            isReconnecting = false;
             connectWebSocket(); // Tente une reconnexion
-            isReconnecting = false; // Reset une fois terminé
         }, retryInterval);
     }
 }
+
+window.addEventListener('beforeunload', () => {
+    clearInterval(keepAliveInterval);
+    clearTimeout(reconnectTimeout);
+});
 
 
 // Fonction pour afficher un message d'erreur et masquer le formulaire de login
@@ -384,17 +403,6 @@ function hideConnectionError() {
 }
 
 
-
-function revealAllCells(board) {
-    board.forEach((row, x) => {
-        row.forEach((cell, y) => {
-            cell.revealed = true; // Marquer chaque cellule comme révélée
-        });
-    });
-
-    // Après avoir marqué toutes les cellules comme révélées, on réaffiche le plateau
-    displayGameBoard(board);
-}
 
 // Rafraîchir la liste des joueurs connectés
 function refreshPlayersList(players) {
@@ -515,6 +523,8 @@ function displayGameBoard(board, losingCell = null) {
                     // Vérifier si c'est la mine qui a provoqué la fin de la partie
                     if (losingCell && x == losingCell.x && y == losingCell.y) {
                         cellBack.classList.add('mine-triggered');
+                        cellBack.setAttribute('aria-label', 'Case ayant déclenché la défaite');
+                        cellBack.title = 'Clic ayant déclenché la défaite';
                     }
                 } else if (cell.adjacentMines > 0) {
                     cellBack.textContent = cell.adjacentMines; // Afficher le nombre de mines adjacentes
@@ -528,13 +538,14 @@ function displayGameBoard(board, losingCell = null) {
                     cellFront.textContent = '🚩'; // Afficher le drapeau
                 }
             }
+            td.dataset.state = `${Number(Boolean(cell.revealed))}:${Number(Boolean(cell.flagged))}:${cell.adjacentMines ?? ''}`;
 
             cellInner.appendChild(cellFront);
             cellInner.appendChild(cellBack);
             td.appendChild(cellInner);
 
             // Gestion des clics (révélation des cases)
-            td.addEventListener('click', () => revealCell(x, y));
+            td.addEventListener('click', () => revealCell(x, y, td));
             // Clic droit pour placer ou retirer un drapeau
             td.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
@@ -548,6 +559,50 @@ function displayGameBoard(board, losingCell = null) {
     gameBoardDiv.appendChild(table);
 }
 
+// Mettre à jour la grille en place évite de recréer des centaines de cellules
+// et d'écouteurs à chaque coup.
+function updateGameBoard(board) {
+    const table = document.querySelector('#gameBoard table');
+    if (!table || table.rows.length !== board.length ||
+        (board[0] && table.rows[0]?.cells.length !== board[0].length)) {
+        displayGameBoard(board);
+        return;
+    }
+
+    board.forEach((row, x) => {
+        row.forEach((cell, y) => {
+            const td = table.rows[x].cells[y];
+            const state = `${Number(Boolean(cell.revealed))}:${Number(Boolean(cell.flagged))}:${cell.adjacentMines ?? ''}`;
+            if (td.dataset.state === state) {
+                td.classList.remove('pending-reveal');
+                return;
+            }
+            const front = td.querySelector('.cell-front');
+            const back = td.querySelector('.cell-back');
+
+            td.classList.remove('pending-reveal');
+            td.classList.toggle('revealed', Boolean(cell.revealed));
+            td.classList.toggle('cell-flagged', !cell.revealed && Boolean(cell.flagged));
+            front.textContent = !cell.revealed && cell.flagged ? '🚩' : '';
+            back.textContent = '';
+            for (let number = 1; number <= 8; number++) {
+                back.classList.remove(`mine-number-${number}`);
+            }
+            if (cell.revealed && cell.adjacentMines > 0) {
+                back.textContent = cell.adjacentMines;
+                back.classList.add(`mine-number-${cell.adjacentMines}`);
+            }
+            td.dataset.state = state;
+        });
+    });
+}
+
+function clearPendingCells() {
+    document.querySelectorAll('#gameBoard .pending-reveal').forEach(cell => {
+        cell.classList.remove('pending-reveal');
+    });
+}
+
 
 async function handleRegister() {
     const username = document.getElementById('registerUsername').value;
@@ -555,9 +610,6 @@ async function handleRegister() {
     await sendRegister(username, password);
     console.log('Tentative de création de compte pour ' + username);
 }
-
-// Ajouter l'écouteur pour le bouton de création de compte
-registerBtn.addEventListener('click', handleRegister);
 
 // Fonction pour vider le plateau de jeu
 function clearGameBoard() {
@@ -579,22 +631,24 @@ function showNotYourTurnPopup() {
 }
 
 function handleLogoutSuccess(data) {
-    if (data.username === username) {
-        // Le joueur qui a initié la déconnexion doit être redirigé vers l'écran de connexion
-        document.getElementById('game').style.display = 'none';
-        document.getElementById('navbar').style.display = 'none';
-        showLoginModal();
-        logMessage('Vous avez été déconnecté.');
-    } else {
-        // Un autre joueur a été déconnecté, mettre à jour la liste des utilisateurs
-        updatePlayerList(data.players);
-        logMessage(data.username + ' a été déconnecté.');
-    }
+    username = undefined;
+    currentPlayerId = undefined;
+    currentGameId = undefined;
+    document.getElementById('game').style.display = 'none';
+    document.getElementById('navbar').style.display = 'none';
+    showLoginModal();
+    logMessage('Vous avez été déconnecté.');
 }
 
 // Gestion des cellules
-function revealCell(x, y) {
-    if (currentGameId) {  // Vérifiez que le game_id est bien défini
+function revealCell(x, y, cellElement = null) {
+    if (currentGameId && socket.readyState === WebSocket.OPEN) {
+        if (cellElement?.classList.contains('pending-reveal') ||
+            cellElement?.classList.contains('revealed') ||
+            cellElement?.classList.contains('cell-flagged')) {
+            return;
+        }
+        cellElement?.classList.add('pending-reveal');
         socket.send(JSON.stringify({
             type: 'reveal_cell',
             game_id: currentGameId,  // Utilisez le game_id stocké
@@ -659,6 +713,7 @@ document.getElementById('closeModalBtn').addEventListener('click', () => {
         type: 'refresh_players',
         game_id: currentGameId
     }));
+    currentGameId = undefined;
 });
 
 loginBtn.addEventListener('click', async () => {
@@ -686,6 +741,7 @@ function hideModal(modal) {
 }
 
 document.getElementById('logoutLink').addEventListener('click', () => {
+    sessionStorage.removeItem('minesweeperSessionToken');
     clearGameBoard(); 
     socket.send(JSON.stringify({ type: 'logout' }));
     document.getElementById('welcomeMessage').style.display = 'none';
@@ -703,7 +759,7 @@ document.getElementById('declineInviteBtn').addEventListener('click', declineInv
 
 
 // Sélectionner les éléments du menu burger et des liens
-const navbarToggler = document.querySelector('#navbar');
+const navbarToggler = document.querySelector('.navbar-toggler');
 const navbarCollapse = document.querySelector('.navbar-collapse');
 const navLinks = document.querySelectorAll('.nav-link');
 

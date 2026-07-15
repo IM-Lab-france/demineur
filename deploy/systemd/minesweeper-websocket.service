@@ -1,0 +1,32 @@
+[Unit]
+Description=Serveur WebSocket Minesweeper
+After=network-online.target mysql.service
+
+[Service]
+Type=simple
+User=minesweeper
+Group=minesweeper
+WorkingDirectory=/var/www/demineur
+EnvironmentFile=/var/www/secure/minesweeper-service.env
+Environment=APP_CONFIG_DIR=/var/www/secure
+Environment=LOG_PATH=/var/log/minesweeper/backend.log
+Environment=WS_HOST=127.0.0.1
+Environment=WS_PORT=8080
+Environment=WS_ALLOWED_ORIGINS=demineur.fozzy.fr,fozzy.fr,192.168.1.170,localhost,127.0.0.1
+ExecStart=/usr/bin/php /var/www/demineur/server.php
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=minesweeper-websocket
+Restart=on-failure
+RestartSec=3
+LogsDirectory=minesweeper
+LogsDirectoryMode=0750
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/minesweeper
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,16 @@
 <?php
-// admin_interface.php
+require_once __DIR__ . '/bootstrap.php';
+require_admin(false);
+$csrf = csrf_token();
+$players = [];
+try {
+    $db = new Database();
+    $players = $db->getPDO()->query(
+        'SELECT id, username, games_played, games_won, games_draw FROM users ORDER BY username'
+    )->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    // Le panneau de contrôle du service reste accessible si MySQL est indisponible.
+}
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -41,6 +52,7 @@
                 <li class="nav-item">
                     <a class="nav-link" href="/ia/deminium">Démineur IA</a>
                 </li>
+                <li class="nav-item"><form method="post" action="/admin/logout.php"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>"><button class="btn btn-link nav-link" type="submit">Déconnexion</button></form></li>
             </ul>
         </div>
     </div>
@@ -59,6 +71,33 @@
         <button id="start-button" class="btn btn-success">Démarrer le Serveur</button>
         <button id="stop-button" class="btn btn-danger">Arrêter le Serveur</button>
     </div>
+
+    <section class="card mt-5">
+        <div class="card-body">
+            <h2 class="h4">Réinitialisation des scores</h2>
+            <p class="text-muted">Cette action remet à zéro les parties jouées, victoires et égalités. L’historique des parties est conservé.</p>
+            <div class="alert alert-warning py-2">Arrêtez le serveur avant de réinitialiser les scores.</div>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-8">
+                    <label for="score-player" class="form-label">Joueur</label>
+                    <select id="score-player" class="form-select" <?= !$players ? 'disabled' : '' ?>>
+                        <option value="">Sélectionnez un joueur</option>
+                        <?php foreach ($players as $player): ?>
+                            <option value="<?= (int) $player['id'] ?>">
+                                <?= htmlspecialchars($player['username'], ENT_QUOTES, 'UTF-8') ?> — <?= (int) $player['games_played'] ?> partie(s), <?= (int) $player['games_won'] ?> victoire(s), <?= (int) $player['games_draw'] ?> égalité(s)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-4 d-grid">
+                    <button id="reset-player-scores" class="btn btn-warning" <?= !$players ? 'disabled' : '' ?>>Réinitialiser ce joueur</button>
+                </div>
+                <div class="col-12 d-grid d-md-flex justify-content-md-end">
+                    <button id="reset-all-scores" class="btn btn-outline-danger" <?= !$players ? 'disabled' : '' ?>>Réinitialiser tous les joueurs</button>
+                </div>
+            </div>
+        </div>
+    </section>
     
     <div class="message text-center mt-4">
         <div id="alert-container"></div>
@@ -67,6 +106,7 @@
 
 <script>
 $(document).ready(function(){
+    $.ajaxSetup({ headers: { 'X-CSRF-Token': <?= json_encode($csrf) ?> } });
 
 
     // Gestion du menu
@@ -101,13 +141,12 @@ $(document).ready(function(){
 
     // Fonction pour afficher les messages
     function showMessage(type, message) {
-        const alertHtml = `
-            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
-            </div>
-        `;
-        $('#alert-container').html(alertHtml);
+        const allowed = ['success', 'danger', 'warning', 'info'];
+        const safeType = allowed.includes(type) ? type : 'info';
+        const alert = $('<div>').addClass(`alert alert-${safeType} alert-dismissible fade show`).attr('role', 'alert');
+        alert.append(document.createTextNode(String(message)));
+        alert.append($('<button>').addClass('btn-close').attr({'type':'button','data-bs-dismiss':'alert','aria-label':'Fermer'}));
+        $('#alert-container').empty().append(alert);
     }
 
     // Fonction pour vérifier le statut du serveur
@@ -228,6 +267,44 @@ $(document).ready(function(){
                 showMessage('danger', 'Erreur lors de la tentative d\'arrêt du serveur.');
             }
         });
+    });
+
+    function resetScores(scope, playerId) {
+        const isAll = scope === 'all';
+        const target = isAll ? 'tous les joueurs' : $('#score-player option:selected').text().trim();
+        if (!isAll && !playerId) {
+            showMessage('warning', 'Sélectionnez un joueur.');
+            return;
+        }
+        if (!window.confirm(`Confirmer la remise à zéro des scores pour ${target} ?`)) return;
+        if (isAll && window.prompt('Pour confirmer, saisissez RESET') !== 'RESET') {
+            showMessage('warning', 'Confirmation annulée.');
+            return;
+        }
+        $.ajax({
+            url: '/admin/reset_scores.php',
+            method: 'POST',
+            dataType: 'json',
+            data: { scope, player_id: playerId || '', confirmation: isAll ? 'RESET' : 'PLAYER' },
+            success: function(response) {
+                if (response.success) {
+                    showMessage('success', response.message);
+                    window.setTimeout(() => window.location.reload(), 800);
+                } else {
+                    showMessage('danger', response.message);
+                }
+            },
+            error: function(xhr) {
+                showMessage('danger', xhr.responseJSON?.message || 'La réinitialisation a échoué.');
+            }
+        });
+    }
+
+    $('#reset-player-scores').click(function() {
+        resetScores('player', $('#score-player').val());
+    });
+    $('#reset-all-scores').click(function() {
+        resetScores('all', null);
     });
 });
 </script>
