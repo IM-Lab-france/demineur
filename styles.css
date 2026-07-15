@@ -1,6 +1,4 @@
 /* Importation de la police 'Creepster' */
-@import url('https://fonts.googleapis.com/css2?family=Creepster&display=swap');
-
 
 /* Simple CSS pour styliser l'interface */
 body {
@@ -190,6 +188,43 @@ td.revealed {
     min-height: 100vh; /* Utilise toute la hauteur de la fenêtre */
     flex-direction: column; /* Dispose les éléments en colonne par défaut */
     margin: 0 auto;
+}
+
+#gameStatus {
+    min-width: 220px;
+    padding: 12px;
+    font-weight: 500;
+}
+
+#gameCounters {
+    display: flex;
+    justify-content: center;
+    gap: 18px;
+    margin-top: 8px;
+}
+
+#gameBoard.waiting-turn {
+    opacity: 0.72;
+}
+
+#gameBoard.waiting-turn .cell:not(.revealed) {
+    cursor: not-allowed;
+}
+
+#gameBoard td:focus-visible {
+    outline: 3px solid #0d6efd;
+    outline-offset: -3px;
+    position: relative;
+    z-index: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 #gameBoard {
     display: flex;

@@ -19,7 +19,7 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
     <title>Gestion des IA - Démineur Multijoueur</title>
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
     <!-- Inclure Bootstrap CSS -->
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/assets/vendor/bootstrap/4.5.0/bootstrap.min.css">
     <style>
         /* Optionnel : personnalisation des toasts */
         .toast {
@@ -176,8 +176,8 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
     </div>
 
     <!-- Inclure jQuery et Bootstrap JS -->
-    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
+    <script src="/assets/vendor/jquery/jquery-3.5.1.min.js"></script>
+    <script src="/assets/vendor/bootstrap/4.5.0/bootstrap.bundle.min.js"></script>
 
 
 

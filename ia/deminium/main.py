@@ -10,6 +10,7 @@ import os
 import importlib.util
 import random
 import logging
+import signal
 
 # Variables globales
 current_player_id = None
@@ -235,7 +236,16 @@ async def make_move(websocket, board):
     global pause_duration
 
     # Utilisation de la stratégie de mouvement pour choisir le coup
-    best_move = move_strategy.choose_move(board)
+    available = [
+        {'x': x, 'y': y}
+        for x, row in enumerate(board)
+        for y, cell in enumerate(row)
+        if not cell.get('revealed', False) and not cell.get('flagged', False)
+    ]
+    if selected_level == 'easy':
+        best_move = random.choice(available) if available else None
+    else:
+        best_move = move_strategy.choose_move(board)
 
     if best_move:
         x, y = best_move['x'], best_move['y']
@@ -304,5 +314,23 @@ def display_board(board):
 if __name__ == "__main__":
     uri = os.environ.get('MINESWEEPER_WS_URL', 'ws://127.0.0.1:8080')
 
-    # Exécuter la connexion au serveur
-    asyncio.run(connect_to_server(uri))
+    def request_stop(*_args):
+        global stop_ai
+        stop_ai = True
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+
+    async def run_forever():
+        delay = 1
+        while not stop_ai:
+            try:
+                await connect_to_server(uri)
+                delay = 1
+            except (OSError, asyncio.TimeoutError, websockets.WebSocketException) as exc:
+                logging.warning('Connexion WebSocket interrompue: %s', exc)
+            if not stop_ai:
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 30)
+
+    asyncio.run(run_forever())

@@ -19,6 +19,8 @@ apache_proxy_source="$project_dir/deploy/apache/minesweeper-websocket.conf"
 apache_proxy_target=/etc/apache2/conf-available/minesweeper-websocket.conf
 apache_security_source="$project_dir/deploy/apache/minesweeper-security.conf"
 apache_security_target=/etc/apache2/conf-available/minesweeper-security.conf
+backup_service_source="$project_dir/deploy/systemd/minesweeper-backup.service"
+backup_timer_source="$project_dir/deploy/systemd/minesweeper-backup.timer"
 
 [[ -f "$service_source" ]] || { echo "Unité absente: $service_source" >&2; exit 1; }
 [[ -f "$source_env" ]] || { echo "Configuration absente: $source_env" >&2; exit 1; }
@@ -47,6 +49,9 @@ install -d -o www-data -g minesweeper -m 2770 /var/log/minesweeper/ai
 install -o root -g root -m 0644 "$service_source" "$service_target"
 install -o root -g root -m 0644 "$apache_proxy_source" "$apache_proxy_target"
 install -o root -g root -m 0644 "$apache_security_source" "$apache_security_target"
+install -d -o root -g root -m 0700 /var/backups/minesweeper
+install -o root -g root -m 0644 "$backup_service_source" /etc/systemd/system/minesweeper-backup.service
+install -o root -g root -m 0644 "$backup_timer_source" /etc/systemd/system/minesweeper-backup.timer
 
 sudoers_tmp=$(mktemp)
 trap 'rm -f "$sudoers_tmp"' EXIT
@@ -58,6 +63,7 @@ install -o root -g root -m 0440 "$sudoers_tmp" "$sudoers_target"
 
 systemctl daemon-reload
 systemctl enable "$service_name"
+systemctl enable --now minesweeper-backup.timer
 systemctl restart "$service_name"
 a2enmod proxy proxy_http proxy_wstunnel headers expires rewrite
 a2enconf minesweeper-websocket minesweeper-security

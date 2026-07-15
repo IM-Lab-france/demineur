@@ -7,6 +7,7 @@ let refreshInterval;
 let connected = false;
 let currentPlayerId;
 let currentInvitationId = null;
+let isMyTurn = false;
 let errorDiv = null;
 let retryInterval = 5000;
 let keepAliveInterval; 
@@ -256,6 +257,7 @@ function connectWebSocket() {
                 document.getElementById('gameContainer').style.display = 'flex';
                 currentGameId = data.game_id;
                 displayGameBoard(data.board);
+                updateGameStatus(data.board, data.mineCount, data.currentPlayer);
 
                 // Afficher le joueur qui commence
                 currentPlayerDisplay = document.getElementById('currentTurnDisplay');
@@ -269,8 +271,20 @@ function connectWebSocket() {
 
                 break;
 
+            case 'game_resumed':
+                currentGameId = data.game_id;
+                document.getElementById('availableUser').style.display = 'none';
+                document.getElementById('gameContainer').style.display = 'flex';
+                displayGameBoard(data.board);
+                updateGameStatus(data.board, data.mineCount, data.currentPlayer);
+                currentPlayerDisplay = document.getElementById('currentTurnDisplay');
+                currentPlayerDisplay.textContent = 'Partie reprise — tour actuel : ' + data.currentPlayer;
+                showHelpIcon();
+                break;
+
             case 'update_board':
                 updateGameBoard(data.board);
+                updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 // Mettre à jour le nom du joueur dont c'est le tour
                 currentPlayerDisplay = document.getElementById('currentTurnDisplay');
                 currentPlayerDisplay.textContent = 'Tour actuel: ' + data.currentPlayer; // Affiche le joueur actuel
@@ -305,6 +319,14 @@ function connectWebSocket() {
             case 'player_disconnected':
                 logMessage('Votre adversaire s\'est déconnecté. La partie est annulée.');
                 showWinnerModal('Votre adversaire s\'est déconnecté. La partie est annulée.', currentGameId);
+                break;
+            case 'player_reconnecting':
+                currentPlayerDisplay = document.getElementById('currentTurnDisplay');
+                currentPlayerDisplay.textContent = data.message;
+                break;
+            case 'player_reconnected':
+                currentPlayerDisplay = document.getElementById('currentTurnDisplay');
+                currentPlayerDisplay.textContent = data.message;
                 break;
             case 'logout_success':
                 handleLogoutSuccess(data);
@@ -546,6 +568,18 @@ function displayGameBoard(board, losingCell = null) {
 
             // Gestion des clics (révélation des cases)
             td.addEventListener('click', () => revealCell(x, y, td));
+            td.tabIndex = 0;
+            td.setAttribute('role', 'button');
+            td.setAttribute('aria-label', `Case ligne ${x + 1}, colonne ${y + 1}`);
+            td.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    revealCell(x, y, td);
+                } else if (event.key.toLowerCase() === 'f') {
+                    event.preventDefault();
+                    placeFlag(x, y);
+                }
+            });
             // Clic droit pour placer ou retirer un drapeau
             td.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
@@ -593,6 +627,10 @@ function updateGameBoard(board) {
                 back.classList.add(`mine-number-${cell.adjacentMines}`);
             }
             td.dataset.state = state;
+            const description = cell.revealed
+                ? (cell.adjacentMines > 0 ? `${cell.adjacentMines} mine(s) à proximité` : 'Case vide révélée')
+                : (cell.flagged ? 'Case marquée par un drapeau' : 'Case masquée');
+            td.setAttribute('aria-label', `Case ligne ${x + 1}, colonne ${y + 1} : ${description}`);
         });
     });
 }
@@ -601,6 +639,16 @@ function clearPendingCells() {
     document.querySelectorAll('#gameBoard .pending-reveal').forEach(cell => {
         cell.classList.remove('pending-reveal');
     });
+}
+
+function updateGameStatus(board, mineCount, currentPlayer) {
+    isMyTurn = currentPlayer === username;
+    const flags = board.reduce((total, row) => total + row.filter(cell => cell.flagged).length, 0);
+    document.getElementById('mineCounter').textContent = `💣 ${Number(mineCount) || 0}`;
+    document.getElementById('flagCounter').textContent = `🚩 ${flags}`;
+    const gameBoard = document.getElementById('gameBoard');
+    gameBoard.classList.toggle('waiting-turn', !isMyTurn);
+    gameBoard.setAttribute('aria-disabled', isMyTurn ? 'false' : 'true');
 }
 
 
@@ -642,6 +690,10 @@ function handleLogoutSuccess(data) {
 
 // Gestion des cellules
 function revealCell(x, y, cellElement = null) {
+    if (!isMyTurn) {
+        showNotYourTurnPopup();
+        return;
+    }
     if (currentGameId && socket.readyState === WebSocket.OPEN) {
         if (cellElement?.classList.contains('pending-reveal') ||
             cellElement?.classList.contains('revealed') ||
@@ -663,6 +715,10 @@ function revealCell(x, y, cellElement = null) {
 }
 
 function placeFlag(x, y) {
+    if (!isMyTurn) {
+        showNotYourTurnPopup();
+        return;
+    }
     if (currentGameId) {  // Vérifiez que le game_id est bien défini
         socket.send(JSON.stringify({
             type: 'place_flag',

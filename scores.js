@@ -82,10 +82,12 @@ function refreshScores(players) {
 
         // Utiliser toFixed pour afficher deux décimales
         const usernameCell = row.insertCell();
-        usernameCell.textContent = player.username;
+        usernameCell.textContent = `${player.username}${Number(player.is_ai) === 1 ? ' 🤖' : ''}`;
         row.insertCell().textContent = gamesPlayed;
         row.insertCell().textContent = player.games_won || 0;
+        row.insertCell().textContent = player.games_lost || 0;
         row.insertCell().textContent = player.games_draw || 0;
+        row.insertCell().textContent = player.ranking_points || 0;
         const percentageCell = row.insertCell();
         const progress = document.createElement('div');
         progress.className = 'progress';
@@ -109,7 +111,7 @@ function showScoresMessage(message) {
     scoresTable.innerHTML = '';
     const row = document.createElement('tr');
     const cell = row.insertCell();
-    cell.colSpan = 5;
+    cell.colSpan = 8;
     cell.className = 'text-center text-muted';
     cell.textContent = message;
     scoresTable.appendChild(row);

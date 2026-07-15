@@ -88,4 +88,19 @@ $cancellationServer->cancelTestGame('cancelled', 10, 20);
 outcome_assert(!$cancellationServer->hasTestGame('cancelled'), 'Une partie interrompue doit être supprimée.');
 outcome_assert($cancellationServer->decremented === [10, 20], 'Une partie interrompue ne doit rester comptée pour aucun joueur.');
 
+$gamesProperty->setValue($server, ['resume' => [
+    'players' => [10, 20],
+    'inviter' => 10,
+    'invitee' => 20,
+    'currentTurn' => 10,
+    'spectators' => [],
+]]);
+$replaceConnection = $reflection->getMethod('replaceGameConnection');
+$replaceConnection->setAccessible(true);
+$replaceConnection->invoke($server, 'resume', 10, 30);
+$resumedGames = $gamesProperty->getValue($server);
+outcome_assert($resumedGames['resume']['players'] === [30, 20], 'La reprise doit remplacer la connexion dans les joueurs.');
+outcome_assert($resumedGames['resume']['inviter'] === 30, 'La reprise doit conserver le rôle d’inviteur.');
+outcome_assert($resumedGames['resume']['currentTurn'] === 30, 'La reprise doit conserver le tour du joueur reconnecté.');
+
 echo "Tests des règles de fin de partie réussis.\n";

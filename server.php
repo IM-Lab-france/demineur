@@ -108,6 +108,7 @@ class MinesweeperServer implements MessageComponentInterface {
     protected $authAttempts = [];
     protected $registrationAttempts = [];
     protected $authSessions = [];
+    protected $pendingReconnects = [];
     protected $actionWindows = [];
     protected $recordMoveStatement;
     protected $allowedGridSizes = ['10x10', '20x20', '30x30'];
@@ -272,13 +273,23 @@ class MinesweeperServer implements MessageComponentInterface {
     
         $this->logger->info("Connexion fermée pour le joueur {$disconnectedPlayerId}");
     
+        $playerInfo = $this->players[$disconnectedPlayerId] ?? null;
+        $reconnectPending = false;
+
         // Vérifier si le joueur déconnecté est en partie
         foreach ($this->games as $gameId => $game) {
             if (in_array($disconnectedPlayerId, $game['players'])) {
                 // L'autre joueur dans la partie
                 $otherPlayerId = $game['players'][0] === $disconnectedPlayerId ? $game['players'][1] : $game['players'][0];
     
-                // Envoyer un message à l'autre joueur pour l'informer de la déconnexion
+                $sessionToken = $playerInfo['session_token'] ?? null;
+                if (is_string($sessionToken) && isset($this->authSessions[$sessionToken])) {
+                    $reconnectPending = true;
+                    $this->schedulePlayerReconnect($sessionToken, $gameId, $disconnectedPlayerId, $otherPlayerId);
+                    continue;
+                }
+
+                // Sans session récupérable, annuler immédiatement la partie.
                 $otherPlayerConnection = $this->getConnectionFromPlayerId($otherPlayerId);
                 if ($otherPlayerConnection) {
                     $otherPlayerConnection->send(json_encode([
@@ -307,11 +318,48 @@ class MinesweeperServer implements MessageComponentInterface {
         }
     
         // Supprimer le joueur de la liste des joueurs connectés
-        unset($this->players[$disconnectedPlayerId]);
+        if (!$reconnectPending) unset($this->players[$disconnectedPlayerId]);
         unset($this->actionWindows[$disconnectedPlayerId]);
     
         // Envoyer la liste mise à jour des joueurs connectés à tous les autres clients
         $this->sendConnectedPlayersList($from);
+    }
+
+    protected function schedulePlayerReconnect(string $token, string $gameId, int $oldResourceId, int $otherPlayerId): void {
+        if (isset($this->pendingReconnects[$token]['timer'])) {
+            \React\EventLoop\Loop::cancelTimer($this->pendingReconnects[$token]['timer']);
+        }
+        $otherConnection = $this->getConnectionFromPlayerId($otherPlayerId);
+        if ($otherConnection) {
+            $otherConnection->send(json_encode([
+                'type' => 'player_reconnecting',
+                'message' => 'Votre adversaire a perdu la connexion. Reprise possible pendant 30 secondes.',
+                'timeout' => 30,
+            ]));
+        }
+        $timer = \React\EventLoop\Loop::addTimer(30, function () use ($token, $gameId, $oldResourceId, $otherPlayerId): void {
+            $pending = $this->pendingReconnects[$token] ?? null;
+            if (!$pending || $pending['old_resource_id'] !== $oldResourceId) return;
+            unset($this->pendingReconnects[$token]);
+            if (isset($this->games[$gameId])) {
+                $otherConnection = $this->getConnectionFromPlayerId($otherPlayerId);
+                if ($otherConnection) {
+                    $otherConnection->send(json_encode([
+                        'type' => 'player_disconnected',
+                        'message' => 'Votre adversaire ne s’est pas reconnecté. La partie est annulée.',
+                    ]));
+                }
+                $this->cancelGameAfterDisconnect($gameId, $oldResourceId, $otherPlayerId);
+            }
+            unset($this->players[$oldResourceId], $this->actionWindows[$oldResourceId]);
+            $this->broadcastConnectedPlayersList($oldResourceId);
+        });
+        $this->pendingReconnects[$token] = [
+            'game_id' => $gameId,
+            'old_resource_id' => $oldResourceId,
+            'other_player_id' => $otherPlayerId,
+            'timer' => $timer,
+        ];
     }
 
     public function onError(ConnectionInterface $from, \Exception $e) {
@@ -636,6 +684,12 @@ class MinesweeperServer implements MessageComponentInterface {
         $user = $db->getUserByUsername($username);
     
         // Vérifier si l'utilisateur existe et si le mot de passe correspond
+        if ($user && !empty($user['is_disabled'])) {
+            $attempt['count']++;
+            $this->authAttempts[$attemptKey] = $attempt;
+            $from->send(json_encode(['type' => 'login_failed', 'message' => 'Ce compte est désactivé.']));
+            return;
+        }
         if ($user && password_verify($password, $user['password_hash'])) {
             unset($this->authAttempts[$attemptKey]);
             $sessionToken = bin2hex(random_bytes(32));
@@ -698,11 +752,12 @@ class MinesweeperServer implements MessageComponentInterface {
             return;
         }
 
+        $oldResourceId = null;
         foreach ($this->players as $resourceId => $player) {
             if ($resourceId !== $from->resourceId && ($player['session_token'] ?? null) === $token) {
+                $oldResourceId = $resourceId;
                 $oldConnection = $this->getConnectionFromPlayerId($resourceId);
                 if ($oldConnection) $oldConnection->close();
-                unset($this->players[$resourceId]);
             }
         }
 
@@ -712,6 +767,22 @@ class MinesweeperServer implements MessageComponentInterface {
             'session_token' => $token,
         ];
         $this->authSessions[$token]['expires_at'] = time() + 43200;
+
+        $resumedGameId = null;
+        if (isset($this->pendingReconnects[$token])) {
+            $pending = $this->pendingReconnects[$token];
+            \React\EventLoop\Loop::cancelTimer($pending['timer']);
+            unset($this->pendingReconnects[$token]);
+            $oldResourceId = $pending['old_resource_id'];
+            $resumedGameId = $pending['game_id'];
+            if (isset($this->games[$resumedGameId])) {
+                $this->replaceGameConnection($resumedGameId, $oldResourceId, $from->resourceId);
+            }
+        }
+        if ($oldResourceId !== null) {
+            unset($this->players[$oldResourceId], $this->actionWindows[$oldResourceId]);
+        }
+
         $from->send(json_encode([
             'type' => 'login_success',
             'playerId' => $session['id'],
@@ -719,7 +790,42 @@ class MinesweeperServer implements MessageComponentInterface {
             'sessionToken' => $token,
             'players' => $this->getConnectedPlayers(),
         ]));
+        if ($resumedGameId !== null && isset($this->games[$resumedGameId])) {
+            $game = $this->games[$resumedGameId];
+            $from->send(json_encode([
+                'type' => 'game_resumed',
+                'game_id' => $resumedGameId,
+                'board' => $this->maskMinesForPlayer($game['board']),
+                'currentPlayer' => $this->players[$game['currentTurn']]['username'],
+                'mineCount' => $game['mineCount'],
+            ]));
+            $otherId = $game['players'][0] === $from->resourceId ? $game['players'][1] : $game['players'][0];
+            $otherConnection = $this->getConnectionFromPlayerId($otherId);
+            if ($otherConnection) {
+                $otherConnection->send(json_encode([
+                    'type' => 'player_reconnected',
+                    'message' => 'Votre adversaire s’est reconnecté. La partie reprend.',
+                ]));
+            }
+        }
         $this->sendConnectedPlayersList($from);
+    }
+
+    protected function replaceGameConnection(string $gameId, int $oldResourceId, int $newResourceId): void {
+        $game = &$this->games[$gameId];
+        foreach ($game['players'] as &$playerId) {
+            if ($playerId === $oldResourceId) $playerId = $newResourceId;
+        }
+        unset($playerId);
+        if ($game['inviter'] === $oldResourceId) $game['inviter'] = $newResourceId;
+        if ($game['invitee'] === $oldResourceId) $game['invitee'] = $newResourceId;
+        if ($game['currentTurn'] === $oldResourceId) $game['currentTurn'] = $newResourceId;
+        if (isset($game['spectators'])) {
+            foreach ($game['spectators'] as &$spectatorId) {
+                if ($spectatorId === $oldResourceId) $spectatorId = $newResourceId;
+            }
+            unset($spectatorId);
+        }
     }
 
     protected function handleLogout(ConnectionInterface $from) {
@@ -731,6 +837,18 @@ class MinesweeperServer implements MessageComponentInterface {
         $username = $this->players[$from->resourceId]['username'];
         $sessionToken = $this->players[$from->resourceId]['session_token'] ?? null;
         if ($sessionToken !== null) unset($this->authSessions[$sessionToken]);
+        foreach ($this->games as $gameId => $game) {
+            if (!in_array($from->resourceId, $game['players'], true)) continue;
+            $otherPlayerId = $game['players'][0] === $from->resourceId ? $game['players'][1] : $game['players'][0];
+            $otherConnection = $this->getConnectionFromPlayerId($otherPlayerId);
+            if ($otherConnection) {
+                $otherConnection->send(json_encode([
+                    'type' => 'player_disconnected',
+                    'message' => 'Votre adversaire s’est déconnecté. La partie est annulée.',
+                ]));
+            }
+            $this->cancelGameAfterDisconnect($gameId, $from->resourceId, $otherPlayerId);
+        }
         // Retirer le joueur de la liste des joueurs connectés
         unset($this->players[$from->resourceId]);
     
@@ -1245,6 +1363,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 $connection->send(json_encode([
                     'type' => 'update_board',
                     'board' => $maskedBoard,
+                    'mineCount' => $this->games[$gameId]['mineCount'],
                     'turn' => $this->games[$gameId]['currentTurn'],
                     'currentPlayer' => $this->players[$this->games[$gameId]['currentTurn']]['username']
                 ]));
@@ -1252,6 +1371,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 $this->logger->info("OUT:" . json_encode([
                     'type' => 'update_board',
                     'board' => '[masked]',
+                    'mineCount' => $this->games[$gameId]['mineCount'],
                     'turn' => $this->games[$gameId]['currentTurn'],
                     'currentPlayer' => $this->players[$this->games[$gameId]['currentTurn']]['username']
                 ]));
@@ -1404,18 +1524,22 @@ class MinesweeperServer implements MessageComponentInterface {
     }
     
     protected function sendConnectedPlayersList(ConnectionInterface $from) {
+        $this->broadcastConnectedPlayersList($from->resourceId);
+    }
+
+    protected function broadcastConnectedPlayersList(int $sourceConnectionId): void {
         $playersList = $this->getConnectedPlayers();
         foreach ($this->clients as $client) {
             if (!$this->isAuthenticated($client)) continue;
             $client->send(json_encode([
                 'type' => 'connected_players',
-                'playerId' => $from->resourceId,
+                'playerId' => $sourceConnectionId,
                 'players' => $playersList
             ]));
 
         }
         $this->logger->info('Liste des joueurs connectés diffusée.', [
-            'source_connection_id' => $from->resourceId,
+            'source_connection_id' => $sourceConnectionId,
             'player_count' => count($playersList),
         ]);
     }
@@ -1553,10 +1677,12 @@ class MinesweeperServer implements MessageComponentInterface {
         // Récupérer les scores des joueurs depuis la base de données
         $db = $this->db;
         $stmt = $db->getPDO()->prepare("
-            SELECT username, games_won, games_draw, games_played, 
+            SELECT username, is_ai, games_won, games_draw, games_played,
+            GREATEST(games_played - games_won - games_draw, 0) AS games_lost,
+            (games_won * 3 + games_draw) AS ranking_points,
             (games_won / NULLIF(games_played, 0)) * 100 AS win_percentage
             FROM users
-            ORDER BY win_percentage DESC
+            ORDER BY ranking_points DESC, win_percentage DESC, username ASC
         ");
         $stmt->execute();
         $scores = $stmt->fetchAll(PDO::FETCH_ASSOC);

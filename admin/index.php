@@ -3,10 +3,13 @@ require_once __DIR__ . '/bootstrap.php';
 require_admin(false);
 $csrf = csrf_token();
 $players = [];
+$playerBlockingAvailable = false;
 try {
     $db = new Database();
+    $columns = $db->getPDO()->query("SHOW COLUMNS FROM users LIKE 'is_disabled'")->fetchAll(PDO::FETCH_ASSOC);
+    $playerBlockingAvailable = count($columns) > 0;
     $players = $db->getPDO()->query(
-        'SELECT id, username, games_played, games_won, games_draw FROM users ORDER BY username'
+        'SELECT id, username, games_played, games_won, games_draw' . ($playerBlockingAvailable ? ', is_disabled' : ', 0 AS is_disabled') . ' FROM users ORDER BY username'
     )->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
     // Le panneau de contrôle du service reste accessible si MySQL est indisponible.
@@ -19,11 +22,11 @@ try {
     <title>Interface d'Administration - Serveur Démineur</title>
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
     <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/vendor/bootstrap/5.3.0/bootstrap.min.css" rel="stylesheet">
     <!-- jQuery (pour AJAX) -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="/assets/vendor/jquery/jquery-3.6.0.min.js"></script>
     <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/assets/vendor/bootstrap/5.3.0/bootstrap.bundle.min.js"></script>
     <style>
         body {
             padding-top: 50px;
@@ -97,6 +100,24 @@ try {
                     <button id="reset-all-scores" class="btn btn-outline-danger" <?= !$players ? 'disabled' : '' ?>>Réinitialiser tous les joueurs</button>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <section class="card mt-4">
+        <div class="card-body">
+            <h2 class="h4">Gestion des comptes</h2>
+            <?php if (!$playerBlockingAvailable): ?>
+                <div class="alert alert-warning">Appliquez la migration <code>install/migrations/20260715_admin_players.sql</code> pour activer cette fonction.</div>
+            <?php else: ?>
+                <div class="table-responsive"><table class="table table-sm align-middle">
+                    <thead><tr><th>Joueur</th><th>État</th><th class="text-end">Action</th></tr></thead>
+                    <tbody><?php foreach ($players as $player): ?><tr>
+                        <td><?= htmlspecialchars($player['username'], ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= $player['is_disabled'] ? '<span class="badge bg-danger">Désactivé</span>' : '<span class="badge bg-success">Actif</span>' ?></td>
+                        <td class="text-end"><button class="btn btn-sm <?= $player['is_disabled'] ? 'btn-outline-success' : 'btn-outline-danger' ?> toggle-player" data-player="<?= (int) $player['id'] ?>" data-disabled="<?= $player['is_disabled'] ? '0' : '1' ?>"><?= $player['is_disabled'] ? 'Réactiver' : 'Désactiver' ?></button></td>
+                    </tr><?php endforeach; ?></tbody>
+                </table></div>
+            <?php endif; ?>
         </div>
     </section>
     
@@ -306,6 +327,14 @@ $(document).ready(function(){
     });
     $('#reset-all-scores').click(function() {
         resetScores('all', null);
+    });
+    $('.toggle-player').click(function() {
+        const button = $(this);
+        const disabled = button.data('disabled');
+        if (!window.confirm(disabled ? 'Désactiver ce compte ?' : 'Réactiver ce compte ?')) return;
+        $.post('/admin/toggle_player.php', {player_id: button.data('player'), disabled})
+            .done(response => { showMessage('success', response.message); window.setTimeout(() => location.reload(), 500); })
+            .fail(xhr => showMessage('danger', xhr.responseJSON?.message || 'Modification impossible.'));
     });
 });
 </script>

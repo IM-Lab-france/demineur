@@ -10,6 +10,11 @@ header('Content-Type: application/json');
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $iaName = validated_ia_name();
     $invite = isset($_POST['invite']) && $_POST['invite'] == 1 ? true : false;
+    $level = $_POST['level'] ?? 'medium';
+    if (!in_array($level, ['easy', 'medium', 'hard'], true)) $level = 'medium';
+    $pause = filter_var($_POST['pause'] ?? 700, FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 100, 'max_range' => 10000, 'default' => 700],
+    ]);
     $iaPath = validated_ia_path($iaName);
     $envPath = $iaPath . '/env';
     $secureLogRoot = '/var/log/minesweeper/ai';
@@ -43,7 +48,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $command = ($useSecureLogs ? 'IA_LOG_ROOT=' . escapeshellarg($secureLogRoot) . ' ' : '')
-        . escapeshellarg($envPath . '/bin/python') . ' ' . escapeshellarg($mainScript) . ' --model=' . escapeshellarg($iaName);
+        . escapeshellarg($envPath . '/bin/python') . ' ' . escapeshellarg($mainScript)
+        . ' --model=' . escapeshellarg($iaName)
+        . ' --ai_level=' . escapeshellarg($level)
+        . ' --pause=' . escapeshellarg((string) $pause);
     
     // Ajouter l'option --invite si le mode invite est activé
     if ($invite) {

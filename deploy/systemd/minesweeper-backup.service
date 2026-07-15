@@ -1,0 +1,12 @@
+[Unit]
+Description=Sauvegarde du Démineur
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/var/www/demineur/scripts/backup.sh
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

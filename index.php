@@ -14,12 +14,9 @@ if (!is_dir(__DIR__ . '/vendor')) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="ws-url" content="<?= htmlspecialchars(getenv('WS_PUBLIC_URL') ?: '/ws', ENT_QUOTES, 'UTF-8') ?>">
     <title>Démineur Multijoueur</title>
-    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet"> <!-- Bootstrap -->
+    <link href="/assets/vendor/bootstrap/4.5.2/bootstrap.min.css" rel="stylesheet"> <!-- Bootstrap -->
     <link rel="preload" href="img/background2.webp" as="image" type="image/webp" fetchpriority="high">
     <link rel="stylesheet" href="styles.css"> <!-- Lien vers le fichier CSS -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,900;1,300;1,400;1,500&display=swap" rel="stylesheet">
     <!-- Ajout du favicon -->
     <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
 </head>
@@ -132,7 +129,10 @@ if (!is_dir(__DIR__ . '/vendor')) {
 
         <!-- Plateau de jeu -->
         <div id="gameContainer">
-            <div id="currentTurnDisplay"></div> <!-- L'info sur le joueur qui doit jouer -->
+            <div id="gameStatus" aria-live="polite">
+                <div id="currentTurnDisplay"></div>
+                <div id="gameCounters"><span id="mineCounter">💣 0</span><span id="flagCounter">🚩 0</span></div>
+            </div>
             <div id="plateau">
                 <div id="gameBoard"></div> <!-- Plateau de jeu -->
             </div>
@@ -185,9 +185,8 @@ if (!is_dir(__DIR__ . '/vendor')) {
     <div id="helpIcon" class="help-icon hidden" role="button" aria-label="Afficher l'aide" tabindex="0">❓</div>
 
     <!-- jQuery, Popper.js, and Bootstrap JS -->
-    <script defer src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.1/dist/umd/popper.min.js"></script>
-    <script defer src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script defer src="/assets/vendor/jquery/jquery-3.5.1.slim.min.js"></script>
+    <script defer src="/assets/vendor/bootstrap/4.5.2/bootstrap.bundle.min.js"></script>
     <script defer src="script.js"></script> <!-- Lien vers le fichier JavaScript -->
 </body>
 </html>

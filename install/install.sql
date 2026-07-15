@@ -9,6 +9,7 @@ CREATE TABLE `users` (
   `games_played` int DEFAULT '0',
   `games_won` int DEFAULT '0',
   `is_ai` tinyint(1) DEFAULT '0',
+  `is_disabled` tinyint(1) NOT NULL DEFAULT '0',
   `games_draw` int DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username_UNIQUE` (`username`),
