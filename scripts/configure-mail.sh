@@ -26,4 +26,6 @@ install -o root -g minesweeper -m 0640 "$temp" "$service_env"
 install -o root -g minesweeper -m 0640 "$temp" "$secure_dir/.env"
 systemctl restart minesweeper-websocket.service
 systemctl start minesweeper-mail.service || true
+systemctl reset-failed minesweeper-mail.service minesweeper-health.service || true
+systemctl start minesweeper-health.service || true
 echo "Configuration SMTP enregistrée. Testez une inscription avec une adresse que vous contrôlez."

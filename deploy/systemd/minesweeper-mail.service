@@ -8,6 +8,7 @@ User=minesweeper
 Group=minesweeper
 EnvironmentFile=/var/www/secure/minesweeper-service.env
 Environment=APP_CONFIG_DIR=/var/www/secure
+Environment=XDEBUG_MODE=off
 ExecStart=/usr/bin/php /var/www/demineur/scripts/process-mail-queue.php
 Nice=10
 

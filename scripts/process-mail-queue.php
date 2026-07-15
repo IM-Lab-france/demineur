@@ -8,7 +8,12 @@ require __DIR__ . '/../src/MailQueueRepository.php';
 
 $pdo = (new Database())->getPDO();
 $queue = new MailQueueRepository($pdo);
-$mailer = new MailService();
+try {
+    $mailer = new MailService();
+} catch (RuntimeException $e) {
+    fwrite(STDOUT, "SMTP non configuré; file e-mail laissée en attente.\n");
+    exit(0);
+}
 $sent = 0;
 foreach ($queue->pending() as $row) {
     try {
