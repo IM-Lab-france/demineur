@@ -870,8 +870,18 @@ function hideMenu() {
     }
 }
 
-// Cacher le menu burger lorsque l'on perd le focus
-navbarToggler.addEventListener('blur', hideMenu);
+// Fermer le menu après l'action du lien. Un gestionnaire sur `blur` fermerait
+// le panneau avant que le clic mobile sur le lien ait le temps d'être émis.
+navLinks.forEach((navLink) => {
+    navLink.addEventListener('click', () => setTimeout(hideMenu, 0));
+});
+
+// Un clic réellement extérieur replie également le menu.
+document.addEventListener('click', (event) => {
+    if (!navbarCollapse.contains(event.target) && !navbarToggler.contains(event.target)) {
+        hideMenu();
+    }
+});
 
 
 // Démarrer la connexion WebSocket lors du chargement de la page
