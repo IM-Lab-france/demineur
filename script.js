@@ -355,6 +355,13 @@ function connectWebSocket() {
                 handleLogoutSuccess();
                 break;
 
+            case 'session_transferred':
+                logoutInProgress = false;
+                sessionStorage.removeItem('minesweeperSessionToken');
+                handleLogoutSuccess();
+                loginError.textContent = data.message || 'Votre session a été transférée vers un autre terminal.';
+                break;
+
             case 'error':
                 clearPendingCells();
             if (data.message === "Ce n'est pas votre tour de jouer.") {

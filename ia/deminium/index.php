@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../admin/bootstrap.php';
+require_once __DIR__ . '/ai_config.php';
 require_admin(false);
 $csrf = csrf_token();
 // index.php
@@ -51,54 +52,118 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
     
     <div class="container mt-5">
         <h1>Gestion des IA - Démineur Multijoueur</h1>
-        <table class="table table-bordered mt-4">
-            <thead>
-                <tr>
-                    <th>Nom de l'IA</th>
-                    <th>Mode Invite</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="ia-table-body">
+        <p class="text-muted">Configurez le comportement de chaque adversaire. Une modification appliquée à une IA active nécessite son redémarrage.</p>
+        <div id="ia-table-body" class="ai-grid mt-4">
                 <?php foreach ($iaList as $iaPath): ?>
                     <?php
                     $iaName = basename($iaPath);
+                    $safeIaName = htmlspecialchars($iaName, ENT_QUOTES, 'UTF-8');
                     $initialized = file_exists("$iaPath/env"); // Vérifie si les dépendances sont installées
                     $pidFile = "$iaPath/pid";
                     $running = file_exists($pidFile) && posix_kill(file_get_contents($pidFile), 0);
+                    $initialServiceOutput = [];
+                    exec('/usr/bin/systemctl is-active --quiet ' . escapeshellarg('minesweeper-ai@' . $iaName . '.service'), $initialServiceOutput, $initialServiceCode);
+                    $running = $running || $initialServiceCode === 0;
+                    $config = read_ai_config($iaName);
+                    $memory = ['games' => 0, 'wins' => 0, 'losses' => 0, 'draws' => 0, 'moves' => 0, 'decision_ms_total' => 0, 'decision_errors' => 0];
+                    $memoryPath = "$iaPath/memory.json";
+                    if (is_readable($memoryPath) && filesize($memoryPath) <= 65536) {
+                        $loadedMemory = json_decode((string) file_get_contents($memoryPath), true);
+                        if (is_array($loadedMemory)) {
+                            foreach ($memory as $key => $unused) $memory[$key] = max(0, (int) ($loadedMemory[$key] ?? 0));
+                        }
+                    }
+                    $winRate = $memory['games'] > 0 ? round(100 * $memory['wins'] / $memory['games'], 1) : 0;
+                    $averageDecision = $memory['moves'] > 0 ? round($memory['decision_ms_total'] / $memory['moves']) : 0;
                     ?>
-                    <tr id="ia-row-<?php echo $iaName; ?>">
-                        <td>
-                            <!-- Icône de suppression désactivée si l'IA est en cours d'exécution -->
-                            <span class="delete-icon <?php echo $running ? 'disabled' : ''; ?>" data-ia="<?php echo $iaName; ?>">
-                                🗑️
-                            </span>
-                            <?php echo htmlspecialchars($iaName); ?>
-                        </td>
-                        <td class="text-center">
-                            <input type="checkbox" class="invite-checkbox" data-ia="<?php echo $iaName; ?>">
-                        </td>
-                        <td>
+                    <section class="ai-card" id="ia-row-<?= $safeIaName ?>" data-ia="<?= $safeIaName ?>">
+                        <header class="ai-card-header">
+                            <div>
+                                <span class="status-dot <?= $running ? 'running' : '' ?>" aria-hidden="true"></span>
+                                <h2><?= $safeIaName ?></h2>
+                                <span class="status-label"><?= $running ? 'Démarrée' : 'Arrêtée' ?></span>
+                            </div>
+                            <button type="button" class="delete-icon btn btn-link text-danger <?= $running ? 'disabled' : '' ?>" data-ia="<?= $safeIaName ?>" aria-label="Supprimer l’IA <?= $safeIaName ?>">🗑️</button>
+                        </header>
+
+                        <div class="ai-stats" aria-label="Statistiques de <?= $safeIaName ?>">
+                            <span><strong><?= $memory['games'] ?></strong> parties</span>
+                            <span><strong><?= $memory['wins'] ?></strong> victoires</span>
+                            <span><strong><?= $memory['losses'] ?></strong> défaites</span>
+                            <span><strong><?= $memory['draws'] ?></strong> égalités</span>
+                            <span><strong><?= $winRate ?> %</strong> réussite</span>
+                            <span><strong><?= $averageDecision ?> ms</strong> décision</span>
+                            <span><strong><?= $memory['decision_errors'] ?></strong> erreurs</span>
+                        </div>
+
+                        <form class="ai-config-form" data-ia="<?= $safeIaName ?>">
+                            <div class="config-grid">
+                                <div class="form-group"><label>Niveau
+                                    <select class="form-control" name="level">
+                                        <option value="easy" <?= $config['level'] === 'easy' ? 'selected' : '' ?>>Débutant</option>
+                                        <option value="medium" <?= $config['level'] === 'medium' ? 'selected' : '' ?>>Normal</option>
+                                        <option value="hard" <?= $config['level'] === 'hard' ? 'selected' : '' ?>>Difficile</option>
+                                        <option value="expert" <?= $config['level'] === 'expert' ? 'selected' : '' ?>>Expert</option>
+                                        <option value="master" <?= $config['level'] === 'master' ? 'selected' : '' ?>>Maître</option>
+                                    </select></label></div>
+                                <div class="form-group"><label>Temps de réflexion (ms)
+                                    <input class="form-control" type="number" name="pause" min="100" max="10000" step="100" value="<?= $config['pause'] ?>">
+                                </label></div>
+                                <div class="form-group"><label>Variation du délai (ms)
+                                    <input class="form-control" type="number" name="jitter" min="0" max="5000" step="50" value="<?= $config['jitter'] ?>">
+                                </label></div>
+                                <div class="form-group"><label>Prise de risque (%)
+                                    <input class="form-control risk-input" type="range" name="risk" min="0" max="100" value="<?= $config['risk'] ?>">
+                                    <output class="risk-value"><?= $config['risk'] ?> %</output>
+                                </label></div>
+                                <div class="form-group"><label>Grille créée
+                                    <select class="form-control" name="gridSize">
+                                        <?php foreach (['10x10', '20x20', '30x30'] as $size): ?><option value="<?= $size ?>" <?= $config['gridSize'] === $size ? 'selected' : '' ?>><?= $size ?></option><?php endforeach; ?>
+                                    </select></label></div>
+                                <div class="form-group"><label>Difficulté créée
+                                    <select class="form-control" name="difficulty">
+                                        <option value="10" <?= $config['difficulty'] === 10 ? 'selected' : '' ?>>Facile — 10 %</option>
+                                        <option value="15" <?= $config['difficulty'] === 15 ? 'selected' : '' ?>>Moyenne — 15 %</option>
+                                        <option value="22" <?= $config['difficulty'] === 22 ? 'selected' : '' ?>>Difficile — 22 %</option>
+                                    </select></label></div>
+                                <div class="form-group"><label>Invitations automatiques
+                                    <select class="form-control" name="inviteTarget">
+                                        <option value="none" <?= $config['inviteTarget'] === 'none' ? 'selected' : '' ?>>Désactivées</option>
+                                        <option value="human" <?= $config['inviteTarget'] === 'human' ? 'selected' : '' ?>>Joueurs humains</option>
+                                        <option value="ai" <?= $config['inviteTarget'] === 'ai' ? 'selected' : '' ?>>Autres IA</option>
+                                        <option value="all" <?= $config['inviteTarget'] === 'all' ? 'selected' : '' ?>>Tous les joueurs</option>
+                                    </select></label></div>
+                            </div>
+                            <div class="option-switches">
+                                <label><input type="checkbox" name="autoAccept" value="1" <?= $config['autoAccept'] ? 'checked' : '' ?>> Accepter les invitations</label>
+                                <label><input type="checkbox" name="rematch" value="1" <?= $config['rematch'] ? 'checked' : '' ?>> Proposer une revanche</label>
+                                <label><input type="checkbox" name="useFlags" value="1" <?= $config['useFlags'] ? 'checked' : '' ?>> Utiliser les drapeaux</label>
+                            </div>
+                            <p class="config-state text-muted" aria-live="polite"></p>
+                        </form>
+
+                        <footer class="ai-actions">
                             <button class="btn btn-primary initialize-btn"
-                                    data-ia="<?php echo $iaName; ?>"
-                                    <?php echo $initialized ? 'disabled' : ''; ?>>
+                                    data-ia="<?= $safeIaName ?>"
+                                    <?= $initialized ? 'disabled' : '' ?>>
                                 Initialiser
                             </button>
+                            <button class="btn btn-outline-primary save-config-btn" data-ia="<?= $safeIaName ?>">Enregistrer</button>
+                            <button class="btn btn-outline-secondary reset-stats-btn" data-ia="<?= $safeIaName ?>" <?= $running ? 'disabled' : '' ?>>Réinitialiser les stats</button>
                             <button class="btn btn-success start-btn"
-                                    data-ia="<?php echo $iaName; ?>"
-                                    <?php echo ($running || !$initialized) ? 'disabled' : ''; ?>>
+                                    data-ia="<?= $safeIaName ?>"
+                                    <?= ($running || !$initialized) ? 'disabled' : '' ?>>
                                 Démarrer
                             </button>
                             <button class="btn btn-danger stop-btn"
-                                    data-ia="<?php echo $iaName; ?>"
-                                    <?php echo !$running ? 'disabled' : ''; ?>>
+                                    data-ia="<?= $safeIaName ?>"
+                                    <?= !$running ? 'disabled' : '' ?>>
                                 Arrêter
                             </button>
-                        </td>
-                    </tr>
+                        </footer>
+                    </section>
                 <?php endforeach; ?>
-            </tbody>
-        </table>
+        </div>
 
         <!-- Bouton Nouveau -->
         <button class="btn btn-info" id="new-ia-btn">Nouveau</button>

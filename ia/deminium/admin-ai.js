@@ -51,10 +51,73 @@
                 });
             }
 
-            // Fonction pour récupérer l'état de la checkbox "Mode Invite"
-            function getInviteStatus(iaName) {
-                return $('#ia-row-' + iaName + ' .invite-checkbox').is(':checked') ? 1 : 0;
+            function getConfigData(iaName) {
+                var form = $('#ia-row-' + iaName + ' .ai-config-form');
+                return {
+                    iaName: iaName,
+                    level: form.find('[name="level"]').val(),
+                    pause: form.find('[name="pause"]').val(),
+                    jitter: form.find('[name="jitter"]').val(),
+                    risk: form.find('[name="risk"]').val(),
+                    gridSize: form.find('[name="gridSize"]').val(),
+                    difficulty: form.find('[name="difficulty"]').val(),
+                    inviteTarget: form.find('[name="inviteTarget"]').val(),
+                    autoAccept: form.find('[name="autoAccept"]').is(':checked') ? 1 : 0,
+                    rematch: form.find('[name="rematch"]').is(':checked') ? 1 : 0,
+                    useFlags: form.find('[name="useFlags"]').is(':checked') ? 1 : 0
+                };
             }
+
+            function updateLevelOptions(form) {
+                var master = form.find('[name="level"]').val() === 'master';
+                var risk = form.find('.risk-input');
+                risk.prop('disabled', master);
+                risk.siblings('.risk-value').text(master ? '0 % — analyse maximale' : risk.val() + ' %');
+            }
+
+            $('.ai-config-form').each(function () { updateLevelOptions($(this)); });
+            $('.ai-config-form [name="level"]').on('change', function () { updateLevelOptions($(this).closest('form')); });
+            $('.risk-input').on('input', function () {
+                if (!$(this).prop('disabled')) $(this).siblings('.risk-value').text($(this).val() + ' %');
+            });
+
+            $('.save-config-btn').click(function () {
+                var iaName = $(this).data('ia');
+                var button = $(this);
+                button.prop('disabled', true);
+                $.ajax({
+                    url: 'save_config.php',
+                    method: 'POST',
+                    data: getConfigData(iaName),
+                    dataType: 'json',
+                    complete: function () { button.prop('disabled', false); },
+                    success: function (response) {
+                        showToast(response.message, response.success ? 'success' : 'danger');
+                        $('#ia-row-' + iaName + ' .config-state').text(response.requiresRestart ? 'Redémarrage nécessaire pour appliquer ces réglages.' : 'Configuration enregistrée.');
+                    },
+                    error: function (xhr) {
+                        showToast(xhr.responseJSON?.message || 'Erreur lors de l’enregistrement.', 'danger');
+                    }
+                });
+            });
+
+            $('.reset-stats-btn').click(function () {
+                var iaName = $(this).data('ia');
+                if (!window.confirm('Réinitialiser toutes les statistiques de ' + iaName + ' ?')) return;
+                $.ajax({
+                    url: 'reset_stats.php',
+                    method: 'POST',
+                    data: { iaName: iaName },
+                    dataType: 'json',
+                    success: function (response) {
+                        showToast(response.message, 'success');
+                        window.location.reload();
+                    },
+                    error: function (xhr) {
+                        showToast(xhr.responseJSON?.message || 'Réinitialisation impossible.', 'danger');
+                    }
+                });
+            });
 
             // Gestion du clic sur le bouton "Initialiser"
             $('.initialize-btn').click(function () {
@@ -85,11 +148,10 @@
             $('.start-btn').click(function () {
                 var iaName = $(this).data('ia');
                 var button = $(this);
-                var invite = getInviteStatus(iaName);
                 $.ajax({
                     url: 'start.php',
                     method: 'POST',
-                    data: { iaName: iaName, invite: invite },
+                    data: getConfigData(iaName),
                     dataType: 'json',
                     success: function (response) {
                         if (response.success) {
@@ -319,6 +381,9 @@
                                 row.find('.start-btn').prop('disabled', status.running);
                                 row.find('.stop-btn').prop('disabled', !status.running);
                                 row.find('.delete-icon').toggleClass('disabled', status.running);
+                                row.find('.reset-stats-btn').prop('disabled', status.running);
+                                row.find('.status-dot').toggleClass('running', status.running);
+                                row.find('.status-label').text(status.running ? 'Démarrée' : 'Arrêtée');
                             } else {
                                 location.reload();
                             }

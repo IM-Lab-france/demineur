@@ -11,6 +11,9 @@ if [[ -d "$project_dir/ia/deminium/plugins/Jimbo" ]]; then
   if grep -q 'import pickle' "$project_dir/ia/deminium/plugins/Jimbo/move_strategy.py" 2>/dev/null; then
     cp -a "$project_dir/ia/deminium/plugins/Jimbo/move_strategy.py" "/var/backups/minesweeper/Jimbo-move_strategy-pre-json.py"
     install -o root -g minesweeper -m 0644 "$project_dir/ia/deminium/plugins/.template/move_strategy.py" "$project_dir/ia/deminium/plugins/Jimbo/move_strategy.py"
+  elif ! grep -q "calculate_exact_probabilities" "$project_dir/ia/deminium/plugins/Jimbo/move_strategy.py" 2>/dev/null; then
+    cp -a "$project_dir/ia/deminium/plugins/Jimbo/move_strategy.py" "/var/backups/minesweeper/Jimbo-move_strategy-pre-config.py"
+    install -o root -g minesweeper -m 0644 "$project_dir/ia/deminium/plugins/.template/move_strategy.py" "$project_dir/ia/deminium/plugins/Jimbo/move_strategy.py"
   fi
   rm -f "$project_dir/ia/deminium/plugins/Jimbo/memory.pkl" "$project_dir/ia/deminium/plugins/Jimbo/pid"
   chmod 0755 "$project_dir/ia/deminium/plugins/Jimbo"

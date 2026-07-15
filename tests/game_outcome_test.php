@@ -103,4 +103,41 @@ outcome_assert($resumedGames['resume']['players'] === [30, 20], 'La reprise doit
 outcome_assert($resumedGames['resume']['inviter'] === 30, 'La reprise doit conserver le rôle d’inviteur.');
 outcome_assert($resumedGames['resume']['currentTurn'] === 30, 'La reprise doit conserver le tour du joueur reconnecté.');
 
+class TransferTestServer extends MinesweeperServer {
+    public array $persisted = [];
+    public function __construct() {
+        $this->clients = new SplObjectStorage();
+        $this->players = [
+            10 => ['id' => 1, 'username' => 'Alice', 'session_token' => str_repeat('a', 64)],
+            20 => ['id' => 2, 'username' => 'Bob', 'session_token' => str_repeat('b', 64)],
+            30 => ['id' => 1, 'username' => 'Alice', 'session_token' => str_repeat('c', 64)],
+        ];
+        $this->games = ['transfer' => [
+            'players' => [10, 20], 'inviter' => 10, 'invitee' => 20,
+            'currentTurn' => 10, 'spectators' => [],
+        ]];
+        $this->pendingInvitations = ['pending' => [
+            'inviter' => 20, 'invitee' => 10, 'createdAt' => time(),
+        ]];
+        $this->authSessions = [str_repeat('a', 64) => ['id' => 1]];
+        $this->pendingReconnects = [];
+        $this->actionWindows = [10 => []];
+        $this->sessionValidationTimes = [10 => time(), 30 => time()];
+        $this->logger = new class { public function info(...$arguments): void {} };
+    }
+    protected function persistGame(string $gameId): void { $this->persisted[] = $gameId; }
+    protected function deletePersistedAuthSession(string $token): void {}
+    public function transfer(): ?string { return $this->transferAuthenticatedConnection(10, 30, str_repeat('c', 64)); }
+    public function state(): array { return [$this->players, $this->games, $this->pendingInvitations, $this->authSessions]; }
+}
+
+$transferServer = new TransferTestServer();
+outcome_assert($transferServer->transfer() === 'transfer', 'Le transfert doit retrouver la partie active.');
+[$transferredPlayers, $transferredGames, $transferredInvitations, $transferredSessions] = $transferServer->state();
+outcome_assert(!isset($transferredPlayers[10]) && isset($transferredPlayers[30]), 'L’ancienne connexion doit perdre l’identité du joueur.');
+outcome_assert($transferredGames['transfer']['players'] === [30, 20], 'La partie doit suivre le joueur sur le nouveau terminal.');
+outcome_assert($transferredGames['transfer']['currentTurn'] === 30, 'Le tour courant doit être transféré.');
+outcome_assert($transferredInvitations['pending']['invitee'] === 30, 'Les invitations en attente doivent suivre la nouvelle connexion.');
+outcome_assert(!isset($transferredSessions[str_repeat('a', 64)]), 'L’ancien jeton de session doit être révoqué.');
+
 echo "Tests des règles de fin de partie réussis.\n";

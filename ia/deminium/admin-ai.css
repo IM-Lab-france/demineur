@@ -2,3 +2,36 @@
 .toast-zone { position: fixed; top: 1rem; right: 1rem; min-width: 300px; z-index: 1100; }
 .delete-icon { cursor: pointer; color: red; margin-left: 10px; }
 .delete-icon.disabled { cursor: not-allowed; color: grey; }
+
+body { padding-top: 3.5rem; background: #f4f6f9; }
+.ai-grid { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); }
+.ai-card { background: #fff; border: 1px solid #dfe3e8; border-radius: 14px; padding: 1.25rem; box-shadow: 0 5px 18px rgba(25, 35, 50, .08); }
+.ai-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #e8ebef; padding-bottom: .85rem; }
+.ai-card-header > div { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; }
+.ai-card h2 { display: inline; margin: 0; font-size: 1.35rem; }
+.status-dot { width: .8rem; height: .8rem; flex: 0 0 .8rem; border-radius: 50%; background: #dc3545; box-shadow: 0 0 0 3px rgba(220, 53, 69, .14); }
+.status-dot.running { background: #198754; box-shadow: 0 0 0 3px rgba(25, 135, 84, .14); }
+.status-label { color: #6c757d; font-size: .88rem; }
+.ai-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: .5rem; padding: 1rem 0; }
+.ai-stats span { padding: .55rem .35rem; border-radius: 8px; background: #f5f7fa; text-align: center; font-size: .76rem; color: #667085; }
+.ai-stats strong { display: block; color: #202936; font-size: 1.02rem; }
+.config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .2rem 1rem; }
+.config-grid label { display: block; width: 100%; font-weight: 600; font-size: .88rem; }
+.config-grid .form-control { margin-top: .3rem; font-weight: 400; }
+.risk-input { padding: 0; border: 0; }
+.risk-value { display: block; margin-top: .2rem; color: #495057; font-weight: 400; text-align: right; }
+.option-switches { display: flex; flex-wrap: wrap; gap: .7rem 1rem; padding: .6rem 0; }
+.option-switches label { margin: 0; }
+.config-state { min-height: 1.5rem; margin: .25rem 0; font-size: .85rem; }
+.ai-actions { display: flex; flex-wrap: wrap; gap: .5rem; padding-top: .8rem; border-top: 1px solid #e8ebef; }
+.delete-icon { margin: 0; padding: .2rem .45rem; }
+
+@media (max-width: 575.98px) {
+    .container { padding-left: 12px; padding-right: 12px; }
+    h1 { font-size: 1.65rem; }
+    .ai-card { padding: 1rem; }
+    .config-grid { grid-template-columns: 1fr; }
+    .ai-stats { grid-template-columns: repeat(2, 1fr); }
+    .ai-actions .btn { flex: 1 1 calc(50% - .5rem); min-height: 44px; }
+    .toast-zone { left: 8px; right: 8px; min-width: 0; }
+}

@@ -15,6 +15,7 @@ class MoveStrategy:
         self.memory_path = os.path.join(plugin_dir, 'memory.json')
         self.state_size = (10, 10)  # Taille du plateau : 10x10
         self.total_mines = 15  # Nombre total de mines (à ajuster selon la difficulté)
+        self.level = 'medium'
         
         # Charger la mémoire si elle existe
         self.memory = {'games': 0, 'wins': 0, 'losses': 0, 'draws': 0}
@@ -37,13 +38,15 @@ class MoveStrategy:
         self.uncovered = set()
         self.board = None
 
-    def beginGame(self, board):
+    def beginGame(self, board, mine_count=None):
         # Réinitialiser les variables pour une nouvelle partie
         self.known_mines = set()
         self.known_safe = set()
         self.flags = set()
         self.uncovered = set()
         self.board = board
+        if isinstance(mine_count, int) and mine_count >= 0:
+            self.total_mines = mine_count
 
     def choose_move(self, board):
         self.board = board
@@ -70,6 +73,12 @@ class MoveStrategy:
         while progress:
             progress = self.apply_deterministic_logic()
 
+        # Signaler d'abord une mine déduite qui n'est pas encore marquée sur le serveur.
+        flag_candidates = self.known_mines - self.flags - self.uncovered
+        if flag_candidates:
+            move = flag_candidates.pop()
+            return {'x': move[0], 'y': move[1], 'action': 'flag'}
+
         # Si des coups sûrs sont trouvés, en choisir un
         if self.known_safe:
             move = self.known_safe.pop()
@@ -83,6 +92,10 @@ class MoveStrategy:
         else:
             # Aucune action sûre, utiliser la méthode probabiliste
             move = self.probabilistic_choice()
+            flag_candidates = self.known_mines - self.flags - self.uncovered
+            if flag_candidates:
+                flag = flag_candidates.pop()
+                return {'x': flag[0], 'y': flag[1], 'action': 'flag'}
             if move:
                 print(f"Action probabiliste choisie : ({move[0]}, {move[1]})")
                 # Vérifier que la cellule n'est pas révélée ou marquée
@@ -144,7 +157,6 @@ class MoveStrategy:
                         for n in unrevealed:
                             if n not in self.known_mines and n not in self.uncovered:
                                 self.known_mines.add(n)
-                                self.flags.add(n)
                                 progress = True
         return progress
 
@@ -161,9 +173,18 @@ class MoveStrategy:
 
     def probabilistic_choice(self):
         # Générer une carte de probabilités
-        prob_map = self.calculate_probabilities()
+        prob_map = self.calculate_exact_probabilities() if self.level == 'master' else self.calculate_probabilities()
         if not prob_map:
             return None
+        if self.level == 'master':
+            for cell, probability in prob_map.items():
+                if probability >= 1.0:
+                    self.known_mines.add(cell)
+                elif probability <= 0.0:
+                    self.known_safe.add(cell)
+            prob_map = {cell: probability for cell, probability in prob_map.items() if probability < 1.0}
+            if self.known_safe:
+                return self.known_safe.pop()
         # Trouver les cellules avec la probabilité minimale
         min_prob = min(prob_map.values())
         min_cells = [cell for cell, prob in prob_map.items() if prob == min_prob]
@@ -172,6 +193,72 @@ class MoveStrategy:
             if cell not in self.uncovered and cell not in self.flags:
                 return cell
         return None
+
+    def calculate_exact_probabilities(self, max_component_size=18, max_solutions=200000):
+        """Résout exactement les composantes de frontière de taille raisonnable.
+
+        Les composantes trop grandes sont volontairement ignorées : le niveau
+        maître reste ainsi borné en CPU et peut utiliser le calcul simplifié en
+        solution de repli.
+        """
+        constraints = []
+        frontier = set()
+        for x in range(len(self.board)):
+            for y in range(len(self.board[0])):
+                cell = self.board[x][y]
+                if not cell['revealed'] or cell.get('adjacentMines', 0) <= 0:
+                    continue
+                neighbors = self.get_neighbors(x, y)
+                unknown = {
+                    neighbor for neighbor in neighbors
+                    if neighbor not in self.uncovered and neighbor not in self.flags
+                }
+                required = cell['adjacentMines'] - sum(1 for neighbor in neighbors if neighbor in self.flags)
+                if unknown and 0 <= required <= len(unknown):
+                    constraints.append((unknown, required))
+                    frontier.update(unknown)
+        if not constraints:
+            return self.calculate_probabilities()
+
+        # Regrouper les variables reliées par au moins une même contrainte.
+        components = []
+        remaining = set(frontier)
+        while remaining:
+            component = {remaining.pop()}
+            changed = True
+            while changed:
+                changed = False
+                for cells, _required in constraints:
+                    if component.intersection(cells) and not cells.issubset(component):
+                        additions = cells - component
+                        component.update(additions)
+                        remaining.difference_update(additions)
+                        changed = True
+            components.append(component)
+
+        probabilities = {}
+        for component in components:
+            if len(component) > max_component_size:
+                continue
+            variables = list(component)
+            relevant = [(cells & component, required) for cells, required in constraints if cells & component]
+            mine_counts = {cell: 0 for cell in variables}
+            solution_count = 0
+            for mask in range(1 << len(variables)):
+                if solution_count >= max_solutions:
+                    break
+                mines = {variables[index] for index in range(len(variables)) if mask & (1 << index)}
+                if all(len(mines & cells) == required for cells, required in relevant):
+                    solution_count += 1
+                    for mine in mines:
+                        mine_counts[mine] += 1
+            if solution_count:
+                for cell, count in mine_counts.items():
+                    probabilities[cell] = count / solution_count
+
+        if not probabilities:
+            return self.calculate_probabilities()
+        return probabilities
 
     def calculate_probabilities(self):
         # Pour simplifier, limiter aux cellules en frontière

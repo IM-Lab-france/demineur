@@ -24,10 +24,17 @@ stop_ai = False
 consecutive_move_errors = 0
 
 # Configuration par défaut
-pause_duration = 1  # En millisecondes
-invite_automatically = '--invite' in sys.argv or os.environ.get('IA_INVITE') == '1'
-grid_size = '20x20'
+pause_duration = 700  # En millisecondes
+invite_target = os.environ.get('IA_INVITE_TARGET', 'ai' if ('--invite' in sys.argv or os.environ.get('IA_INVITE') == '1') else 'none')
+invite_automatically = invite_target != 'none'
+grid_size = os.environ.get('IA_GRID_SIZE', '20x20')
+game_difficulty = int(os.environ.get('IA_DIFFICULTY', '15'))
 selected_level = os.environ.get('IA_LEVEL', 'medium')
+pause_jitter = int(os.environ.get('IA_PAUSE_JITTER_MS', '350'))
+auto_accept = os.environ.get('IA_AUTO_ACCEPT', '1') == '1'
+rematch = os.environ.get('IA_REMATCH', '1') == '1'
+use_flags = os.environ.get('IA_USE_FLAGS', '1') == '1'
+risk_percent = int(os.environ.get('IA_RISK_PERCENT', '25'))
 model_name = '2o1'  # Modèle par défaut
 pause_duration = int(os.environ.get('IA_PAUSE_MS', pause_duration))
 
@@ -41,6 +48,19 @@ for arg in sys.argv:
         selected_level = arg.split('=')[1]
     elif arg.startswith('--model='):
         model_name = arg.split('=')[1]  # Extraire le nom du modèle choisi
+
+if selected_level not in ('easy', 'medium', 'hard', 'expert', 'master'):
+    selected_level = 'medium'
+if grid_size not in ('10x10', '20x20', '30x30'):
+    grid_size = '20x20'
+if game_difficulty not in (10, 15, 22):
+    game_difficulty = 15
+if invite_target not in ('none', 'ai', 'human', 'all'):
+    invite_target = 'none'
+invite_automatically = invite_target != 'none'
+pause_duration = max(100, min(10000, pause_duration))
+pause_jitter = max(0, min(5000, pause_jitter))
+risk_percent = max(0, min(100, risk_percent))
 
 # Définir le dossier des logs hors du DocumentRoot en production.
 log_root = os.environ.get('IA_LOG_ROOT')
@@ -62,6 +82,7 @@ logging.basicConfig(
 logging.info('Début du script IA')
 logging.info(f'Nom du modèle: {model_name}')
 logging.info(f'Taille de la grille: {grid_size}')
+logging.info('Configuration niveau=%s difficulté=%s invitations=%s drapeaux=%s risque=%s%%', selected_level, game_difficulty, invite_target, use_flags, risk_percent)
 
 # Chemin du répertoire des plugins
 plugins_dir = os.path.join(os.path.dirname(__file__), 'plugins', model_name)
@@ -103,6 +124,10 @@ if b'import pickle' in strategy_source or b'pickle.load' in strategy_source:
     print("La stratégie utilise pickle et doit être migrée vers JSON.")
     sys.exit(1)
 move_strategy_module = load_module('move_strategy', strategy_path)
+if selected_level == 'master' and not hasattr(move_strategy_module.MoveStrategy, 'calculate_exact_probabilities'):
+    master_strategy_path = os.path.join(os.path.dirname(__file__), 'plugins', '.template', 'move_strategy.py')
+    move_strategy_module = load_module('move_strategy_master', master_strategy_path)
+    logging.info('Stratégie maître intégrée utilisée pour ce modèle historique.')
 
 # Créer une instance de MoveStrategy
 legacy_memory = os.path.join(plugins_dir, 'memory.pkl')
@@ -110,11 +135,15 @@ if os.path.isfile(legacy_memory):
     # L'ancien format pickle permet l'exécution de code au chargement. Il est neutralisé.
     os.remove(legacy_memory)
 move_strategy = move_strategy_module.MoveStrategy()
+move_strategy.level = selected_level
 
 # La mémoire est gérée par le lanceur en JSON validé. Les anciennes stratégies
 # ne sont plus autorisées à sérialiser avec pickle.
 memory_path = os.path.join(plugins_dir, 'memory.json')
-ai_memory = {'games': 0, 'wins': 0, 'losses': 0, 'draws': 0}
+ai_memory = {
+    'games': 0, 'wins': 0, 'losses': 0, 'draws': 0,
+    'moves': 0, 'decision_ms_total': 0, 'decision_errors': 0
+}
 if os.path.isfile(memory_path) and os.path.getsize(memory_path) <= 65536:
     try:
         with open(memory_path, 'r', encoding='utf-8') as memory_file:
@@ -211,7 +240,10 @@ async def handle_server_messages(websocket, username):
         elif data['type'] == 'invite':
             print(f"Invitation reçue de : {data['inviter']}")
             current_invitation_id = data['invitationId']
-            await accept_invite(websocket)
+            if auto_accept:
+                await accept_invite(websocket)
+            else:
+                await decline_invite(websocket)
 
         elif data['type'] == 'game_start':
             print("Partie commencée !")
@@ -219,6 +251,10 @@ async def handle_server_messages(websocket, username):
                 move_strategy.beginGame(data['board'], data.get('mineCount'))
             except TypeError:
                 move_strategy.beginGame(data['board'])
+            # Compatibilité avec les anciennes stratégies qui ne recevaient pas
+            # encore le nombre réel de mines.
+            if isinstance(data.get('mineCount'), int):
+                move_strategy.total_mines = data['mineCount']
             current_game_id = data['game_id']
             display_board(data['board'])
 
@@ -244,7 +280,7 @@ async def handle_server_messages(websocket, username):
             save_ai_memory(data['winner_name'], username)
             
             # Réinviter de nouveau l'adversaire
-            if invite_automatically and invited_player_id is not None:
+            if invite_automatically and rematch and invited_player_id is not None:
                 await invite_player(websocket, invited_player_id)
 
         elif data['type'] == 'connected_players':
@@ -261,15 +297,27 @@ async def accept_invite(websocket):
     }
     await websocket.send(json.dumps(accept_message))
 
+async def decline_invite(websocket):
+    await websocket.send(json.dumps({
+        'type': 'decline_invite',
+        'invitationId': current_invitation_id
+    }))
+
 async def search_and_invite_player(websocket, players, username):
     global invited_player_id
     for player in players:
-        if player['username'].startswith('ia_') and player['username'] != username:
+        player_is_ai = player['username'].startswith('ia_')
+        target_matches = (
+            invite_target == 'all'
+            or (invite_target == 'ai' and player_is_ai)
+            or (invite_target == 'human' and not player_is_ai)
+        )
+        if target_matches and player['username'] != username:
             print(f"Invitation du joueur : {player['username']}")
             await invite_player(websocket, player['id'])
             invited_player_id = player['id']
             return
-    print("Aucun joueur 'ia_' approprié trouvé pour l'invitation.")
+    print(f"Aucun joueur correspondant à la cible '{invite_target}' trouvé.")
 
 async def invite_player(websocket, player_id):
     if player_id is None:
@@ -279,7 +327,7 @@ async def invite_player(websocket, player_id):
         'type': 'invite',
         'invitee': player_id,
         'gridSize': grid_size,
-        'difficulty': 15
+        'difficulty': game_difficulty
     }
     await websocket.send(json.dumps(invite_message))
 
@@ -294,21 +342,40 @@ async def make_move(websocket, board):
         if not cell.get('revealed', False) and not cell.get('flagged', False)
     ]
     decision_started = time.monotonic()
-    if selected_level == 'easy' or (selected_level == 'medium' and random.random() < 0.25):
+    random_move = selected_level == 'easy' or (
+        selected_level != 'master' and random.random() < (risk_percent / 100)
+    )
+    if random_move:
         best_move = random.choice(available) if available else None
     else:
         try:
-            best_move = await asyncio.wait_for(asyncio.to_thread(move_strategy.choose_move, board), timeout=2.0)
+            decision_timeout = 8.0 if selected_level == 'master' else (5.0 if selected_level == 'expert' else 2.0)
+            best_move = await asyncio.wait_for(asyncio.to_thread(move_strategy.choose_move, board), timeout=decision_timeout)
+            if use_flags and hasattr(move_strategy, 'known_mines'):
+                server_flags = {
+                    (x, y)
+                    for x, row in enumerate(board)
+                    for y, cell in enumerate(row)
+                    if cell.get('flagged', False)
+                }
+                unflagged_mines = set(move_strategy.known_mines) - server_flags
+                if unflagged_mines:
+                    flag_x, flag_y = unflagged_mines.pop()
+                    best_move = {'x': flag_x, 'y': flag_y, 'action': 'flag'}
             consecutive_move_errors = 0
         except Exception as exc:
             consecutive_move_errors += 1
+            ai_memory['decision_errors'] += 1
             logging.error('Décision IA impossible (%s/5): %s', consecutive_move_errors, exc)
             best_move = random.choice(available) if available else None
             if consecutive_move_errors >= 5:
                 logging.critical('Cinq erreurs de décision consécutives; temporisation de sécurité.')
                 await asyncio.sleep(10)
                 consecutive_move_errors = 0
-    logging.info('Décision IA niveau=%s durée_ms=%.2f', selected_level, (time.monotonic() - decision_started) * 1000)
+    decision_ms = (time.monotonic() - decision_started) * 1000
+    ai_memory['moves'] += 1
+    ai_memory['decision_ms_total'] += int(decision_ms)
+    logging.info('Décision IA niveau=%s durée_ms=%.2f', selected_level, decision_ms)
 
     if best_move:
         x, y = best_move['x'], best_move['y']
@@ -322,10 +389,14 @@ async def make_move(websocket, board):
         return
 
     # Pause avant d'envoyer le coup
-    await asyncio.sleep(pause_duration / 1000)
+    actual_pause = pause_duration + (random.randint(0, pause_jitter) if pause_jitter else 0)
+    await asyncio.sleep(actual_pause / 1000)
 
+    action = best_move.get('action', 'reveal')
+    if action == 'flag' and not use_flags:
+        action = 'reveal'
     move_message = {
-        'type': 'reveal_cell',
+        'type': 'place_flag' if action == 'flag' else 'reveal_cell',
         'game_id': current_game_id,
         'x': int(x),  # Conversion en int natif
         'y': int(y)   # Conversion en int natif

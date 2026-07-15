@@ -121,4 +121,7 @@ if (is_dir($secureLogDir)) {
     deleteDirectory($secureLogDir);
 }
 
+$configFile = (getenv('APP_CONFIG_DIR') ?: '/var/www/secure') . '/ai-' . $iaName . '.env';
+if (is_file($configFile)) @unlink($configFile);
+
 echo json_encode(['success' => true, 'message' => 'IA supprimée avec succès.']);

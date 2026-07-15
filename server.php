@@ -729,22 +729,6 @@ class MinesweeperServer implements MessageComponentInterface {
             return;
         }
     
-        // Vérifier si l'utilisateur est déjà connecté
-        foreach ($this->players as $resourceId => $playerInfo) {
-            if ($playerInfo['username'] === $username) {
-                // L'utilisateur est déjà connecté
-                $from->send(json_encode([
-                    'type' => 'login_failed',
-                    'message' => 'Cet utilisateur est déjà connecté.'
-                ]));
-                $this->logger->info("OUT:" . json_encode([
-                    'type' => 'login_failed',
-                    'message' => 'Cet utilisateur est déjà connecté.'
-                ]));
-                return; // Arrêter le traitement
-            }
-        }
-
         // Utilisation de la base de données pour récupérer les informations de l'utilisateur
         $db = $this->db;
         $user = $db->getUserByUsername($username);
@@ -764,6 +748,13 @@ class MinesweeperServer implements MessageComponentInterface {
                 return;
             }
             unset($this->authAttempts[$attemptKey]);
+            $existingResourceId = null;
+            foreach ($this->players as $resourceId => $playerInfo) {
+                if ($resourceId !== $from->resourceId && $playerInfo['username'] === $username) {
+                    $existingResourceId = (int) $resourceId;
+                    break;
+                }
+            }
             $sessionToken = bin2hex(random_bytes(32));
             $this->authSessions[$sessionToken] = [
                 'id' => $user['id'],
@@ -778,20 +769,38 @@ class MinesweeperServer implements MessageComponentInterface {
                 'session_token' => $sessionToken,
             ];
             $this->sessionValidationTimes[$from->resourceId] = time();
+
+            $transferredGameId = null;
+            if ($existingResourceId !== null) {
+                $transferredGameId = $this->transferAuthenticatedConnection(
+                    $existingResourceId,
+                    $from->resourceId,
+                    $sessionToken
+                );
+            }
     
             $from->send(json_encode([
                 'type' => 'login_success',
                 'playerId' => $user['id'],  // Envoi de l'ID du joueur
                 'username' => $username,
                 'sessionToken' => $sessionToken,
+                'sessionTransferred' => $existingResourceId !== null,
                 'players' => $this->getConnectedPlayers()
             ]));
-            $this->tryRestoreGamesForUser((int) $user['id']);
+            if ($existingResourceId !== null) {
+                $this->sendPendingInvitationsForConnection($from);
+            }
+            if ($transferredGameId !== null && isset($this->games[$transferredGameId])) {
+                $this->sendResumedGame($from, $transferredGameId, 'Votre adversaire a transféré sa partie sur un autre terminal.');
+            } else {
+                $this->tryRestoreGamesForUser((int) $user['id']);
+            }
 
             $this->logger->info("OUT:" . json_encode([
                 'type' => 'login_success',
                 'playerId' => $user['id'],  // Envoi de l'ID du joueur
                 'username' => $username,
+                'session_transferred' => $existingResourceId !== null,
                 'players' => $this->getConnectedPlayers()
             ]));
     
@@ -809,6 +818,79 @@ class MinesweeperServer implements MessageComponentInterface {
             $this->logger->error("OUT:" . json_encode([
                 'type' => 'login_failed',
                 'message' => 'Login ou mot de passe incorrect.'
+            ]));
+        }
+    }
+
+    /**
+     * Remplace une connexion authentifiée sans déclencher la logique d'abandon
+     * exécutée par onClose. L'appelant doit avoir vérifié le mot de passe.
+     */
+    protected function transferAuthenticatedConnection(int $oldResourceId, int $newResourceId, string $newToken): ?string {
+        $oldPlayer = $this->players[$oldResourceId] ?? null;
+        if (!$oldPlayer) return null;
+
+        $oldToken = $oldPlayer['session_token'] ?? null;
+        $transferredGameId = null;
+        foreach ($this->games as $gameId => $game) {
+            if (in_array($oldResourceId, $game['players'], true)) {
+                $this->replaceGameConnection($gameId, $oldResourceId, $newResourceId);
+                $this->persistGame($gameId);
+                $transferredGameId = $gameId;
+            } elseif (isset($game['spectators']) && in_array($oldResourceId, $game['spectators'], true)) {
+                $this->games[$gameId]['spectators'] = array_values(array_map(
+                    fn($id) => $id === $oldResourceId ? $newResourceId : $id,
+                    $game['spectators']
+                ));
+            }
+        }
+
+        foreach ($this->pendingInvitations as &$invitation) {
+            if ($invitation['inviter'] === $oldResourceId) $invitation['inviter'] = $newResourceId;
+            if ($invitation['invitee'] === $oldResourceId) $invitation['invitee'] = $newResourceId;
+        }
+        unset($invitation);
+
+        if (is_string($oldToken)) {
+            if (isset($this->pendingReconnects[$oldToken]['timer'])) {
+                \React\EventLoop\Loop::cancelTimer($this->pendingReconnects[$oldToken]['timer']);
+            }
+            unset($this->pendingReconnects[$oldToken], $this->authSessions[$oldToken]);
+            if ($oldToken !== $newToken) $this->deletePersistedAuthSession($oldToken);
+        }
+
+        // Retirer l'ancienne identité laisse l'ancien terminal connecté au
+        // transport, mais sans accès au compte ni à la partie transférée.
+        unset(
+            $this->players[$oldResourceId],
+            $this->actionWindows[$oldResourceId],
+            $this->sessionValidationTimes[$oldResourceId]
+        );
+        $oldConnection = $this->getConnectionFromPlayerId($oldResourceId);
+        if ($oldConnection) {
+            $oldConnection->send(json_encode([
+                'type' => 'session_transferred',
+                'message' => 'Votre session a été transférée vers un autre terminal.',
+            ]));
+        }
+        $this->logger->info('Session utilisateur transférée.', [
+            'user_id' => $oldPlayer['id'],
+            'old_connection_id' => $oldResourceId,
+            'new_connection_id' => $newResourceId,
+            'game_id' => $transferredGameId,
+        ]);
+        return $transferredGameId;
+    }
+
+    protected function sendPendingInvitationsForConnection(ConnectionInterface $connection): void {
+        foreach ($this->pendingInvitations as $invitationId => $invitation) {
+            if ($invitation['invitee'] !== $connection->resourceId) continue;
+            $inviter = $this->players[$invitation['inviter']] ?? null;
+            if (!$inviter) continue;
+            $connection->send(json_encode([
+                'type' => 'invite',
+                'inviter' => $inviter['username'],
+                'invitationId' => $invitationId,
             ]));
         }
     }
@@ -871,22 +953,7 @@ class MinesweeperServer implements MessageComponentInterface {
             'players' => $this->getConnectedPlayers(),
         ]));
         if ($resumedGameId !== null && isset($this->games[$resumedGameId])) {
-            $game = $this->games[$resumedGameId];
-            $from->send(json_encode([
-                'type' => 'game_resumed',
-                'game_id' => $resumedGameId,
-                'board' => $this->maskMinesForPlayer($game['board']),
-                'currentPlayer' => $this->players[$game['currentTurn']]['username'],
-                'mineCount' => $game['mineCount'],
-            ]));
-            $otherId = $game['players'][0] === $from->resourceId ? $game['players'][1] : $game['players'][0];
-            $otherConnection = $this->getConnectionFromPlayerId($otherId);
-            if ($otherConnection) {
-                $otherConnection->send(json_encode([
-                    'type' => 'player_reconnected',
-                    'message' => 'Votre adversaire s’est reconnecté. La partie reprend.',
-                ]));
-            }
+            $this->sendResumedGame($from, $resumedGameId, 'Votre adversaire s’est reconnecté. La partie reprend.');
         }
         $this->sendConnectedPlayersList($from);
     }
@@ -905,6 +972,26 @@ class MinesweeperServer implements MessageComponentInterface {
                 if ($spectatorId === $oldResourceId) $spectatorId = $newResourceId;
             }
             unset($spectatorId);
+        }
+    }
+
+    protected function sendResumedGame(ConnectionInterface $connection, string $gameId, string $opponentMessage): void {
+        if (!isset($this->games[$gameId])) return;
+        $game = $this->games[$gameId];
+        $connection->send(json_encode([
+            'type' => 'game_resumed',
+            'game_id' => $gameId,
+            'board' => $this->maskMinesForPlayer($game['board']),
+            'currentPlayer' => $this->players[$game['currentTurn']]['username'],
+            'mineCount' => $game['mineCount'],
+        ]));
+        $otherId = $game['players'][0] === $connection->resourceId ? $game['players'][1] : $game['players'][0];
+        $otherConnection = $this->getConnectionFromPlayerId($otherId);
+        if ($otherConnection) {
+            $otherConnection->send(json_encode([
+                'type' => 'player_reconnected',
+                'message' => $opponentMessage,
+            ]));
         }
     }
 

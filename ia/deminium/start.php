@@ -3,19 +3,15 @@ require_once __DIR__ . '/../../admin/bootstrap.php';
 require_admin();
 require_post();
 require_csrf();
+require_once __DIR__ . '/ai_config.php';
 // start.php
 
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $iaName = validated_ia_name();
-    $invite = isset($_POST['invite']) && $_POST['invite'] == 1 ? true : false;
-    $level = $_POST['level'] ?? 'medium';
-    if (!in_array($level, ['easy', 'medium', 'hard'], true)) $level = 'medium';
-    $pause = filter_var($_POST['pause'] ?? 700, FILTER_VALIDATE_INT, [
-        'options' => ['min_range' => 100, 'max_range' => 10000, 'default' => 700],
-    ]);
     $iaPath = validated_ia_path($iaName);
+    $config = write_ai_config($iaName, array_merge(read_ai_config($iaName), $_POST));
     $envPath = $iaPath . '/env';
     $secureLogRoot = '/var/log/minesweeper/ai';
     $useSecureLogs = is_dir($secureLogRoot) && is_writable($secureLogRoot);
@@ -50,9 +46,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $systemdUnit = 'minesweeper-ai@' . $iaName . '.service';
     $systemdTemplate = '/etc/systemd/system/minesweeper-ai@.service';
     if (is_file($systemdTemplate)) {
-        $instanceEnv = (getenv('APP_CONFIG_DIR') ?: '/var/www/secure') . '/ai-' . $iaName . '.env';
-        file_put_contents($instanceEnv, "IA_INVITE=" . ($invite ? '1' : '0') . "\nIA_LEVEL={$level}\nIA_PAUSE_MS={$pause}\n", LOCK_EX);
-        @chmod($instanceEnv, 0640);
         exec('/usr/bin/sudo -n /usr/bin/systemctl start ' . escapeshellarg($systemdUnit) . ' 2>&1', $output, $code);
         usleep(500000);
         exec('/usr/bin/systemctl is-active ' . escapeshellarg($systemdUnit) . ' 2>/dev/null', $state, $stateCode);
@@ -65,13 +58,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $command = ($useSecureLogs ? 'IA_LOG_ROOT=' . escapeshellarg($secureLogRoot) . ' ' : '')
+        . 'IA_PAUSE_JITTER_MS=' . escapeshellarg((string) $config['jitter']) . ' '
+        . 'IA_GRID_SIZE=' . escapeshellarg($config['gridSize']) . ' '
+        . 'IA_DIFFICULTY=' . escapeshellarg((string) $config['difficulty']) . ' '
+        . 'IA_INVITE_TARGET=' . escapeshellarg($config['inviteTarget']) . ' '
+        . 'IA_AUTO_ACCEPT=' . escapeshellarg($config['autoAccept'] ? '1' : '0') . ' '
+        . 'IA_REMATCH=' . escapeshellarg($config['rematch'] ? '1' : '0') . ' '
+        . 'IA_USE_FLAGS=' . escapeshellarg($config['useFlags'] ? '1' : '0') . ' '
+        . 'IA_RISK_PERCENT=' . escapeshellarg((string) $config['risk']) . ' '
         . escapeshellarg($envPath . '/bin/python') . ' ' . escapeshellarg($mainScript)
         . ' --model=' . escapeshellarg($iaName)
-        . ' --ai_level=' . escapeshellarg($level)
-        . ' --pause=' . escapeshellarg((string) $pause);
+        . ' --ai_level=' . escapeshellarg($config['level'])
+        . ' --grid_size=' . escapeshellarg($config['gridSize'])
+        . ' --pause=' . escapeshellarg((string) $config['pause']);
     
     // Ajouter l'option --invite si le mode invite est activé
-    if ($invite) {
+    if ($config['inviteTarget'] !== 'none') {
         $command .= ' --invite';
     }
 
