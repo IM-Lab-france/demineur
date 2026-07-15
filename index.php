@@ -47,17 +47,19 @@ if (!is_dir(__DIR__ . '/vendor')) {
     </nav>
 
     <!-- Aide Overlay -->
-    <div id="connectionStatus" class="connection-status" role="status" aria-live="polite">Connexion…</div>
+    <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" title="Connexion…">
+        <span class="connection-status-label sr-only">Connexion…</span>
+    </div>
     <div id="helpOverlay" class="help-overlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
         <div class="help-content">
             <h2 id="helpTitle">❓ Besoin d'aide ?</h2>
             <p>Bienvenue dans le démineur multijoueur ! Voici comment jouer, et n'oubliez pas : on vous observe...</p>
             <ul>
                 <li>
-                    🖱️ <strong>Cliquez gauche</strong> sur une case pour la révéler. Révélez-les toutes, si vous osez.
+                    🖱️ <strong>Sur ordinateur, cliquez gauche</strong> sur une case pour la révéler.
                 </li>
                 <li>
-                    🚩 <strong>Cliquez droit</strong> pour placer un drapeau sur une case suspecte. Mais attention, les erreurs coûtent cher...
+                    🚩 <strong>Sur ordinateur, cliquez droit</strong> pour placer un drapeau. Sur mobile, choisissez d'abord « Révéler » ou « Drapeau » sous la grille.
                 </li>
                 <li>
                     💣 Évitez de cliquer sur les mines, sauf si vous voulez voir ce qui se passe...
@@ -85,10 +87,10 @@ if (!is_dir(__DIR__ . '/vendor')) {
             <img src="img/demineur.png" alt="Logo du Démineur">
             <p>Connectez-vous pour rejoindre l'aventure.</p>
             <div class="form-group">
-                <input type="text" id="loginUsername" class="form-control" placeholder="Nom d'utilisateur">
+                <input type="text" id="loginUsername" class="form-control" placeholder="Nom d'utilisateur" autocomplete="username">
             </div>
             <div class="form-group">
-                <input type="password" id="loginPassword" class="form-control" placeholder="Mot de passe">
+                <input type="password" id="loginPassword" class="form-control" placeholder="Mot de passe" autocomplete="current-password">
             </div>
             <button id="loginBtn" class="btn btn-primary">Connexion</button>
             <p>Pas encore de compte ? <a href="#" id="showRegisterModal">Créez-en un ici !</a></p>
@@ -103,16 +105,16 @@ if (!is_dir(__DIR__ . '/vendor')) {
             <h2>Rejoignez-nous !</h2>
             <p>Créez un compte pour commencer à jouer.</p>
             <div class="form-group">
-                <input type="text" id="registerUsername" class="form-control" placeholder="Choisissez un nom d'utilisateur">
+                <input type="text" id="registerUsername" class="form-control" placeholder="Choisissez un nom d'utilisateur" autocomplete="username">
             </div>
             <div class="form-group">
                 <input type="email" id="registerEmail" class="form-control" placeholder="Votre adresse e-mail" autocomplete="email">
             </div>
             <div class="form-group">
-                <input type="password" id="registerPassword" class="form-control" placeholder="Choisissez un mot de passe">
+                <input type="password" id="registerPassword" class="form-control" placeholder="Choisissez un mot de passe" autocomplete="new-password">
             </div>
             <div class="form-group">
-                <input type="password" id="registerPasswordConfirmation" class="form-control" placeholder="Confirmez le mot de passe">
+                <input type="password" id="registerPasswordConfirmation" class="form-control" placeholder="Confirmez le mot de passe" autocomplete="new-password">
             </div>
             <button id="registerBtn" class="btn btn-secondary">Créer mon compte</button>
             <p>Déjà un compte ? <a href="#" id="showLoginModal">Connectez-vous ici !</a></p>
@@ -144,6 +146,10 @@ if (!is_dir(__DIR__ . '/vendor')) {
             </div>
             <div id="plateau">
                 <div id="gameBoard"></div> <!-- Plateau de jeu -->
+            </div>
+            <div id="touchActions" class="touch-actions" role="group" aria-label="Action appliquée au prochain toucher">
+                <button id="revealModeBtn" class="touch-action active" type="button" aria-pressed="true">👆 Révéler</button>
+                <button id="flagModeBtn" class="touch-action" type="button" aria-pressed="false">🚩 Drapeau</button>
             </div>
         </div>
     </div>

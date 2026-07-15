@@ -7,6 +7,10 @@ function setElementDisplay(element, display) {
     element.classList.remove('display-none', 'display-block', 'display-flex');
     element.classList.add(`display-${display}`);
 }
+
+function setGameActive(active) {
+    document.body.classList.toggle('game-active', Boolean(active));
+}
 let username;
 let currentGameId;
 let refreshInterval;
@@ -21,6 +25,8 @@ let reconnectTimeout;
 let isReconnecting = false;
 let logoutInProgress = false;
 let logoutFallbackTimeout;
+let touchActionMode = 'reveal';
+const mobileGameQuery = window.matchMedia('(max-width: 768px), (pointer: coarse)');
 
 let isMuted = false;
 
@@ -222,6 +228,7 @@ function connectWebSocket() {
                 break;
 
             case 'login_success':
+                setGameActive(false);
                 currentPlayerId = data.playerId; 
                 username = data.username;
                 if (data.sessionToken) {
@@ -268,6 +275,7 @@ function connectWebSocket() {
                 setElementDisplay(document.getElementById('availableUser'), 'none');
                 setElementDisplay(document.getElementById('gameContainer'), 'flex');
                 currentGameId = data.game_id;
+                setGameActive(true);
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
 
@@ -285,6 +293,7 @@ function connectWebSocket() {
 
             case 'game_resumed':
                 currentGameId = data.game_id;
+                setGameActive(true);
                 setElementDisplay(document.getElementById('availableUser'), 'none');
                 setElementDisplay(document.getElementById('gameContainer'), 'flex');
                 displayGameBoard(data.board);
@@ -384,7 +393,9 @@ function connectWebSocket() {
 function setConnectionStatus(label, connected) {
     const status = document.getElementById('connectionStatus');
     if (!status) return;
-    status.textContent = label;
+    const accessibleLabel = status.querySelector('.connection-status-label');
+    if (accessibleLabel) accessibleLabel.textContent = label;
+    status.title = label;
     status.classList.toggle('connected', connected);
 }
 
@@ -472,7 +483,16 @@ function refreshPlayersList(players) {
             const li = document.createElement('li');
             li.textContent = player.username;
             li.dataset.playerId = player.id;
+            li.tabIndex = 0;
+            li.setAttribute('role', 'button');
+            li.setAttribute('aria-label', `Inviter ${player.username}`);
             li.addEventListener('click', () => invitePlayer(player.id));
+            li.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    invitePlayer(player.id);
+                }
+            });
             playersList.appendChild(li);
         });
     }
@@ -548,6 +568,9 @@ function displayGameBoard(board, losingCell = null) {
     gameBoardDiv.innerHTML = ''; // Réinitialiser le plateau de jeu
 
     const table = document.createElement('table');
+    const columnCount = board[0]?.length || 0;
+    table.classList.toggle('board-small', columnCount <= 10);
+    table.style.setProperty('--board-columns', Math.max(columnCount, 1));
     board.forEach((row, x) => {
         const tr = document.createElement('tr');
         row.forEach((cell, y) => {
@@ -597,7 +620,13 @@ function displayGameBoard(board, losingCell = null) {
             td.appendChild(cellInner);
 
             // Gestion des clics (révélation des cases)
-            td.addEventListener('click', () => revealCell(x, y, td));
+            td.addEventListener('click', () => {
+                if (mobileGameQuery.matches && touchActionMode === 'flag') {
+                    placeFlag(x, y);
+                } else {
+                    revealCell(x, y, td);
+                }
+            });
             td.tabIndex = 0;
             td.setAttribute('role', 'button');
             td.setAttribute('aria-label', `Case ligne ${x + 1}, colonne ${y + 1}`);
@@ -622,6 +651,22 @@ function displayGameBoard(board, losingCell = null) {
     });
     gameBoardDiv.appendChild(table);
 }
+
+function setTouchActionMode(mode) {
+    touchActionMode = mode === 'flag' ? 'flag' : 'reveal';
+    const revealButton = document.getElementById('revealModeBtn');
+    const flagButton = document.getElementById('flagModeBtn');
+    const revealSelected = touchActionMode === 'reveal';
+    revealButton.classList.toggle('active', revealSelected);
+    flagButton.classList.toggle('active', !revealSelected);
+    revealButton.setAttribute('aria-pressed', String(revealSelected));
+    flagButton.setAttribute('aria-pressed', String(!revealSelected));
+    document.getElementById('gameBoard').dataset.touchAction = touchActionMode;
+}
+
+document.getElementById('revealModeBtn').addEventListener('click', () => setTouchActionMode('reveal'));
+document.getElementById('flagModeBtn').addEventListener('click', () => setTouchActionMode('flag'));
+setTouchActionMode('reveal');
 
 // Mettre à jour la grille en place évite de recréer des centaines de cellules
 // et d'écouteurs à chaque coup.
@@ -708,6 +753,7 @@ function handleLogoutSuccess() {
     username = undefined;
     currentPlayerId = undefined;
     currentGameId = undefined;
+    setGameActive(false);
     setElementDisplay(document.getElementById('game'), 'none');
     setElementDisplay(document.getElementById('navbar'), 'none');
     showLoginModal();
@@ -797,6 +843,7 @@ document.getElementById('closeModalBtn').addEventListener('click', () => {
         game_id: currentGameId
     }));
     currentGameId = undefined;
+    setGameActive(false);
 });
 
 loginBtn.addEventListener('click', async () => {
