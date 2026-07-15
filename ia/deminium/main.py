@@ -13,6 +13,7 @@ import logging
 import signal
 import hashlib
 import shutil
+import contextlib
 
 # Variables globales
 current_player_id = None
@@ -376,23 +377,46 @@ def display_board(board):
 if __name__ == "__main__":
     uri = os.environ.get('MINESWEEPER_WS_URL', 'ws://127.0.0.1:8080')
 
-    def request_stop(*_args):
-        global stop_ai
-        stop_ai = True
-
-    signal.signal(signal.SIGTERM, request_stop)
-    signal.signal(signal.SIGINT, request_stop)
-
     async def run_forever():
+        global stop_ai
+        shutdown_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def request_stop():
+            global stop_ai
+            stop_ai = True
+            shutdown_event.set()
+
+        for shutdown_signal in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(shutdown_signal, request_stop)
+
         delay = 1
         while not stop_ai:
+            connection_task = asyncio.create_task(connect_to_server(uri))
+            shutdown_task = asyncio.create_task(shutdown_event.wait())
             try:
-                await connect_to_server(uri)
+                done, _pending = await asyncio.wait(
+                    (connection_task, shutdown_task),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if shutdown_task in done:
+                    connection_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await connection_task
+                    break
+                await connection_task
                 delay = 1
             except (OSError, asyncio.TimeoutError, websockets.WebSocketException) as exc:
                 logging.warning('Connexion WebSocket interrompue: %s', exc)
+            finally:
+                shutdown_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await shutdown_task
             if not stop_ai:
-                await asyncio.sleep(delay)
+                try:
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=delay)
+                except asyncio.TimeoutError:
+                    pass
                 delay = min(delay * 2, 30)
 
     asyncio.run(run_forever())

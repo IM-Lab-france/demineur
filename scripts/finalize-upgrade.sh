@@ -13,11 +13,15 @@ if [[ -d "$project_dir/ia/deminium/plugins/Jimbo" ]]; then
     install -o root -g minesweeper -m 0644 "$project_dir/ia/deminium/plugins/.template/move_strategy.py" "$project_dir/ia/deminium/plugins/Jimbo/move_strategy.py"
   fi
   rm -f "$project_dir/ia/deminium/plugins/Jimbo/memory.pkl" "$project_dir/ia/deminium/plugins/Jimbo/pid"
+  chmod 0755 "$project_dir/ia/deminium/plugins/Jimbo"
+  chmod 0644 "$project_dir/ia/deminium/plugins/Jimbo/move_strategy.py"
   systemctl start minesweeper-ai@Jimbo.service
 fi
 
 systemctl start minesweeper-backup.service
 systemctl start minesweeper-backup-verify.service
+chown root:minesweeper /var/log/minesweeper/backup-status.json /var/log/minesweeper/restore-status.json
+chmod 0640 /var/log/minesweeper/backup-status.json /var/log/minesweeper/restore-status.json
 
 rm -rf "$project_dir/.vendor-pre-security-update"
 apache2ctl configtest

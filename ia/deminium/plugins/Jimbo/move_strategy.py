@@ -4,7 +4,6 @@ import numpy as np
 import os
 import json
 import random
-import pickle
 from collections import deque
 from itertools import combinations
 from copy import deepcopy
@@ -13,16 +12,23 @@ class MoveStrategy:
     def __init__(self):
         # Initialisation de l'IA
         plugin_dir = os.path.dirname(__file__)
-        self.memory_path = os.path.join(plugin_dir, 'memory.pkl')
+        self.memory_path = os.path.join(plugin_dir, 'memory.json')
         self.state_size = (10, 10)  # Taille du plateau : 10x10
         self.total_mines = 15  # Nombre total de mines (à ajuster selon la difficulté)
         
         # Charger la mémoire si elle existe
-        if os.path.isfile(self.memory_path):
-            with open(self.memory_path, 'rb') as f:
-                self.memory = pickle.load(f)
-        else:
-            self.memory = {}  # Initialiser une mémoire vide
+        self.memory = {'games': 0, 'wins': 0, 'losses': 0, 'draws': 0}
+        if os.path.isfile(self.memory_path) and os.path.getsize(self.memory_path) <= 65536:
+            try:
+                with open(self.memory_path, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    for key in self.memory:
+                        value = loaded.get(key)
+                        if isinstance(value, int) and 0 <= value <= 1_000_000_000:
+                            self.memory[key] = value
+            except (OSError, ValueError, TypeError):
+                pass
 
         # Variables pour la partie en cours
         self.known_mines = set()
@@ -100,11 +106,19 @@ class MoveStrategy:
                     return None
 
     def endGame(self, winner_name, username):
-        # Enregistrer la mémoire pour la prochaine session
-        plugin_dir = os.path.dirname(__file__)
-        self.memory_path = os.path.join(plugin_dir, 'memory.pkl')
-        with open(self.memory_path, 'wb') as f:
-            pickle.dump(self.memory, f)
+        self.memory['games'] += 1
+        if winner_name == username:
+            self.memory['wins'] += 1
+        elif winner_name in ('Egalité', 'Égalité'):
+            self.memory['draws'] += 1
+        else:
+            self.memory['losses'] += 1
+        temp_path = self.memory_path + '.tmp'
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(self.memory, f, ensure_ascii=False, separators=(',', ':'))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, self.memory_path)
 
     def apply_deterministic_logic(self):
         progress = False

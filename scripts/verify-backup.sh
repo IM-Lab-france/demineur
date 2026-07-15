@@ -35,4 +35,5 @@ for table in users game_details game_moves invitations; do
 done
 echo "Restauration vérifiée : $table_count table(s), archive $archive"
 printf '{"completedAt":"%s","status":"success","tables":%s}\n' "$(date -u +%FT%TZ)" "$table_count" > "$status_dir/restore-status.json"
+chown root:minesweeper "$status_dir/restore-status.json"
 chmod 0640 "$status_dir/restore-status.json"

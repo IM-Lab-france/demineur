@@ -41,6 +41,7 @@ if [[ -n "${OFFSITE_BACKUP_DIR:-}" && -n "${BACKUP_AGE_RECIPIENT:-}" ]]; then
 fi
 printf '{"completedAt":"%s","destination":"%s"}\n' "$(date -u +%FT%TZ)" "$destination" > "$backup_root/last-success.json"
 printf '{"completedAt":"%s","status":"success"}\n' "$(date -u +%FT%TZ)" > "$status_dir/backup-status.json"
+chown root:minesweeper "$status_dir/backup-status.json"
 chmod 0640 "$status_dir/backup-status.json"
 find "$backup_root" -mindepth 1 -maxdepth 1 -type d -mtime "+$retention_days" -exec rm -rf -- {} +
 echo "Sauvegarde créée dans $destination"
