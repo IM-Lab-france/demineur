@@ -531,6 +531,17 @@ body.game-active.chat-open #currentTurnDisplay { padding-left:62px; }
     display: none !important;
 }
 
+.spectator-mode #forfeitGameBtn { display:none!important; }
+#forfeitGameBtn { flex:0 0 auto; white-space:nowrap; }
+.game-paused #gameBoard {
+    pointer-events:none;
+    filter:saturate(.72) brightness(.86);
+}
+.game-paused #touchActions { pointer-events:none; opacity:.55; }
+@media (max-width:1050px) {
+    #forfeitGameBtn span { display:none; }
+}
+
 #gameBoard td:focus-visible {
     outline: 3px solid #0d6efd;
     outline-offset: -3px;
@@ -731,6 +742,15 @@ body.game-active.chat-open #currentTurnDisplay { padding-left:62px; }
     width: 100%;
     max-width: 400px;
     color: #721c24;
+}
+#errorContainer {
+    position:fixed;
+    z-index:1600;
+    inset:0;
+    max-width:none;
+    margin:0;
+    background:rgba(4,22,38,.78);
+    backdrop-filter:blur(3px);
 }
 
 .connection-error h2 {

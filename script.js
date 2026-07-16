@@ -12,6 +12,44 @@ function setGameActive(active) {
     document.body.classList.toggle('game-active', Boolean(active));
 }
 
+const GAME_UI_STATES = new Set(['playing', 'opponent_reconnecting', 'reconnecting', 'spectating', 'game_over']);
+let currentUiState = 'logged_out';
+let uiStateBeforeConnectionLoss = 'logged_out';
+let resumingSession = false;
+
+function applyUiState(state) {
+    currentUiState = state;
+    const authenticated = state !== 'logged_out';
+    const gameVisible = GAME_UI_STATES.has(state);
+    const lobbyVisible = state === 'lobby' || state === 'invited';
+    const paused = state === 'reconnecting' || state === 'opponent_reconnecting' || state === 'game_over';
+    const spectator = state === 'spectating';
+
+    setGameActive(gameVisible);
+    document.body.classList.toggle('game-paused', paused);
+    document.body.classList.toggle('spectator-mode', spectator);
+    setElementDisplay(document.getElementById('game'), authenticated ? 'block' : 'none');
+    setElementDisplay(document.getElementById('navbar'), authenticated ? 'block' : 'none');
+    setElementDisplay(document.getElementById('homeStatusBar'), lobbyVisible ? 'flex' : 'none');
+    setElementDisplay(document.getElementById('availableUser'), lobbyVisible ? 'block' : 'none');
+    setElementDisplay(document.getElementById('gameContainer'), gameVisible ? 'flex' : 'none');
+    setElementDisplay(document.getElementById('invitation'), state === 'invited' ? 'block' : 'none');
+    if (state !== 'game_over') setElementDisplay(document.getElementById('winnerModal'), 'none');
+    if (authenticated) {
+        document.getElementById('loginModal')?.classList.add('hidden');
+        document.getElementById('registerModal')?.classList.add('hidden');
+    }
+    if (gameVisible && typeof hideSocialPanel === 'function') hideSocialPanel();
+
+    const leaveSpectator = document.getElementById('leaveSpectatorBtn');
+    leaveSpectator?.classList.toggle('hidden', !spectator);
+    const forfeit = document.getElementById('forfeitGameBtn');
+    forfeit?.classList.toggle('hidden', spectator || !gameVisible || state === 'game_over');
+    if (forfeit && state === 'playing') forfeit.disabled = false;
+    document.getElementById('revealModeBtn')?.toggleAttribute('disabled', paused || spectator);
+    document.getElementById('flagModeBtn')?.toggleAttribute('disabled', paused || spectator);
+}
+
 function syncGameStatusBarHeight() {
     const statusBar = document.getElementById('currentTurnDisplay');
     if (!statusBar) return;
@@ -47,6 +85,8 @@ const pendingActionTimers = new Map();
 const mobileGameQuery = window.matchMedia('(max-width: 768px), (pointer: coarse)');
 
 let isMuted = false;
+
+applyUiState('logged_out');
 
 
 // gestion des sons
@@ -227,8 +267,11 @@ function connectWebSocket() {
         hideConnectionError(); // Afficher le formulaire de connexion
         const sessionToken = sessionStorage.getItem('minesweeperSessionToken');
         if (sessionToken) {
+            resumingSession = true;
             socket.send(JSON.stringify({ type: 'resume_session', sessionToken }));
         } else {
+            resumingSession = false;
+            applyUiState('logged_out');
             showLoginModal();
         }
 
@@ -256,7 +299,6 @@ function connectWebSocket() {
                 break;
 
             case 'login_success':
-                setGameActive(false);
                 currentPlayerId = data.playerId; 
                 username = data.username;
                 if (data.sessionToken) {
@@ -264,13 +306,12 @@ function connectWebSocket() {
                 }
                 // Masquer la section de connexion et afficher la liste des joueurs
                 hideModal(loginModal); 
-                setElementDisplay(document.getElementById('game'), 'block');
                 document.getElementById('navbarUserDisplay').textContent = data.username;
-                setElementDisplay(document.getElementById('navbar'), 'block');
-                setElementDisplay(document.getElementById('homeStatusBar'), 'flex');
                 setElementDisplay(document.getElementById('welcomeMessage'), 'block');
                 setElementDisplay(document.getElementById('logoutLink'), 'block');
-                setElementDisplay(document.getElementById('availableUser'), 'block');
+                if (!resumingSession || (!currentGameId && !GAME_UI_STATES.has(uiStateBeforeConnectionLoss))) {
+                    applyUiState('lobby');
+                }
                 refreshPlayersList(data.players);
                 requestActiveGames();
                 requestSocialState();
@@ -280,7 +321,10 @@ function connectWebSocket() {
                 break;
 
             case 'resume_failed':
+                resumingSession = false;
                 sessionStorage.removeItem('minesweeperSessionToken');
+                currentGameId = undefined;
+                applyUiState('logged_out');
                 showLoginModal();
                 break;
 
@@ -297,9 +341,8 @@ function connectWebSocket() {
             case 'connected_players':
                 // Rafraîchir la liste des joueurs connectés
                 refreshPlayersList(data.players);
-                if (!currentGameId && username) {
-                    setElementDisplay(document.getElementById('game'), 'block');
-                    setElementDisplay(document.getElementById('availableUser'), 'block');
+                if (!currentGameId && username && currentUiState !== 'reconnecting') {
+                    applyUiState('lobby');
                 }
                 requestActiveGames();
                 break;
@@ -320,11 +363,7 @@ function connectWebSocket() {
             case 'spectator_join_success':
                 isSpectating = true;
                 currentGameId = data.game_id;
-                setGameActive(true);
-                document.body.classList.add('spectator-mode');
-                setElementDisplay(document.getElementById('availableUser'), 'none');
-                setElementDisplay(document.getElementById('gameContainer'), 'flex');
-                document.getElementById('leaveSpectatorBtn').classList.remove('hidden');
+                applyUiState('spectating');
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 document.getElementById('currentTurnText').textContent = `Observation : tour de ${data.currentPlayer}`;
@@ -339,10 +378,10 @@ function connectWebSocket() {
             case 'game_start':
 
                 // Stocker le game_id pour les futures actions
-                setElementDisplay(document.getElementById('availableUser'), 'none');
-                setElementDisplay(document.getElementById('gameContainer'), 'flex');
                 currentGameId = data.game_id;
-                setGameActive(true);
+                isSpectating = false;
+                resumingSession = false;
+                applyUiState('playing');
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
 
@@ -362,9 +401,9 @@ function connectWebSocket() {
 
             case 'game_resumed':
                 currentGameId = data.game_id;
-                setGameActive(true);
-                setElementDisplay(document.getElementById('availableUser'), 'none');
-                setElementDisplay(document.getElementById('gameContainer'), 'flex');
+                isSpectating = false;
+                resumingSession = false;
+                applyUiState('playing');
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 currentPlayerDisplay = document.getElementById('currentTurnText');
@@ -384,8 +423,8 @@ function connectWebSocket() {
 
             case 'invite':
                 document.getElementById('inviter').textContent = data.inviter;
-                setElementDisplay(document.getElementById('invitation'), 'block');
                 currentInvitationId = data.invitationId;
+                applyUiState('invited');
                 break;
 
             case 'invite_declined':
@@ -393,6 +432,7 @@ function connectWebSocket() {
                 break;
 
             case 'game_over':
+                document.getElementById('forfeitGameBtn').disabled = false;
                 const resultMessage = data.winner || data.message || '';
                 if (resultMessage.includes('Vous avez gagné')) {
                     soundWin.play();
@@ -403,6 +443,7 @@ function connectWebSocket() {
                 }
                 // Fin de partie et affichage du gagnant
                 displayGameBoard(data.board, data.losingCell);
+                applyUiState('game_over');
                 showWinnerModal(resultMessage, data.game_id, data.flagScores, data.eloChanges);
             
                 hideHelpIcon();
@@ -410,16 +451,20 @@ function connectWebSocket() {
                 // Ajout de la gestion de la déconnexion d'un joueur
             case 'player_disconnected':
                 logMessage(data.message || 'Votre adversaire s\'est déconnecté. La partie est annulée.');
+                applyUiState('game_over');
                 showWinnerModal(data.message || 'Votre adversaire s\'est déconnecté. La partie est annulée.', currentGameId);
                 break;
             case 'game_cancelled':
+                applyUiState('game_over');
                 showWinnerModal(data.message || 'La partie a été quittée.', currentGameId);
                 break;
             case 'player_reconnecting':
+                applyUiState('opponent_reconnecting');
                 currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = data.message;
                 break;
             case 'player_reconnected':
+                applyUiState(isSpectating ? 'spectating' : 'playing');
                 currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = data.message;
                 break;
@@ -437,6 +482,7 @@ function connectWebSocket() {
                 break;
 
             case 'error':
+                document.getElementById('forfeitGameBtn').disabled = false;
                 clearPendingCells();
                 if (!loginModal.classList.contains('hidden')) {
                     loginError.textContent = data.message || 'Une erreur est survenue pendant la connexion.';
@@ -470,6 +516,8 @@ function connectWebSocket() {
         setConnectionStatus('Reconnexion…', false);
         logMessage('Connexion WebSocket fermée.');
         connected = false; // Indiquer que le client est déconnecté
+        uiStateBeforeConnectionLoss = currentUiState;
+        if (GAME_UI_STATES.has(currentUiState)) applyUiState('reconnecting');
         showConnectionError();
         clearInterval(keepAliveInterval);
         attemptReconnect(); // Essayer de se reconnecter
@@ -548,7 +596,7 @@ function hideConnectionError() {
         }
         errorDiv = null; // Réinitialiser la référence de l'erreur
     }
-    showLoginForm();
+    if (!sessionStorage.getItem('minesweeperSessionToken')) showLoginForm();
 }
 
 
@@ -800,11 +848,7 @@ function leaveSpectatorView() {
     isSpectating = false;
     currentGameId = undefined;
     isMyTurn = false;
-    setGameActive(false);
-    document.body.classList.remove('spectator-mode');
-    document.getElementById('leaveSpectatorBtn').classList.add('hidden');
-    setElementDisplay(document.getElementById('gameContainer'), 'none');
-    setElementDisplay(document.getElementById('availableUser'), 'block');
+    applyUiState('lobby');
     clearGameBoard();
     requestActiveGames();
 }
@@ -826,7 +870,7 @@ function acceptInvite() {
     }));
 
     // Masquer la popin d'invitation
-    setElementDisplay(document.getElementById('invitation'), 'none');
+    applyUiState('lobby');
 }
 
 function declineInvite() {
@@ -840,7 +884,7 @@ function declineInvite() {
     }));
 
     // Masquer la popin d'invitation
-    setElementDisplay(document.getElementById('invitation'), 'none');
+    applyUiState('lobby');
 }
 
 // Afficher le plateau de jeu
@@ -1012,6 +1056,13 @@ function setTouchActionMode(mode) {
 
 document.getElementById('revealModeBtn').addEventListener('click', () => setTouchActionMode('reveal'));
 document.getElementById('flagModeBtn').addEventListener('click', () => setTouchActionMode('flag'));
+document.getElementById('forfeitGameBtn').addEventListener('click', () => {
+    if (!currentGameId || isSpectating || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!window.confirm('Abandonner cette partie ? Cela comptera comme une défaite et modifiera votre classement Elo.')) return;
+    const button = document.getElementById('forfeitGameBtn');
+    button.disabled = true;
+    socket.send(JSON.stringify({ type: 'forfeit_game', game_id: currentGameId }));
+});
 setTouchActionMode('reveal');
 
 // Mettre à jour la grille en place évite de recréer des centaines de cellules
@@ -1105,17 +1156,16 @@ function handleLogoutSuccess() {
     username = undefined;
     currentPlayerId = undefined;
     currentGameId = undefined;
-    setGameActive(false);
-    setElementDisplay(document.getElementById('game'), 'none');
-    setElementDisplay(document.getElementById('navbar'), 'none');
-    setElementDisplay(document.getElementById('homeStatusBar'), 'none');
+    isSpectating = false;
+    resumingSession = false;
+    applyUiState('logged_out');
     showLoginModal();
     logMessage('Vous avez été déconnecté.');
 }
 
 // Gestion des cellules
 function revealCell(x, y, cellElement = null) {
-    if (isSpectating) return;
+    if (isSpectating || currentUiState !== 'playing') return;
     if (!isMyTurn) {
         showNotYourTurnPopup();
         return;
@@ -1141,7 +1191,7 @@ function revealCell(x, y, cellElement = null) {
 }
 
 function placeFlag(x, y) {
-    if (isSpectating) return;
+    if (isSpectating || currentUiState !== 'playing') return;
     if (!isMyTurn) {
         showNotYourTurnPopup();
         return;
@@ -1231,8 +1281,6 @@ async function sendRegister(username, email, password) {
 // Fermer la modale du gagnant
 document.getElementById('closeModalBtn').addEventListener('click', () => {
     setElementDisplay(document.getElementById('winnerModal'), 'none');
-    setElementDisplay(document.getElementById('availableUser'), 'block');
-    setElementDisplay(document.getElementById('gameContainer'), 'none');
     clearGameBoard();
     if (!isSpectating) {
         socket.send(JSON.stringify({
@@ -1242,9 +1290,7 @@ document.getElementById('closeModalBtn').addEventListener('click', () => {
     }
     currentGameId = undefined;
     isSpectating = false;
-    document.body.classList.remove('spectator-mode');
-    document.getElementById('leaveSpectatorBtn').classList.add('hidden');
-    setGameActive(false);
+    applyUiState('lobby');
 });
 
 loginForm.addEventListener('submit', async (event) => {

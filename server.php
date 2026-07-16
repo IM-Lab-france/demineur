@@ -117,6 +117,7 @@ class MinesweeperServer implements MessageComponentInterface {
     protected $sessionValidationTimes = [];
     protected $pendingReconnects = [];
     protected $recoverableGames = [];
+    protected $recoverableGameTimers = [];
     protected $actionWindows = [];
     protected $recordMoveStatement;
     protected $pendingMoves = [];
@@ -257,6 +258,10 @@ class MinesweeperServer implements MessageComponentInterface {
 
             case 'quit_game':
                 $this->handleQuitGame($from, $data);
+                break;
+
+            case 'forfeit_game':
+                $this->handleForfeitGame($from, $data);
                 break;
 
             case 'ready_for_new_game':
@@ -1166,6 +1171,11 @@ class MinesweeperServer implements MessageComponentInterface {
         ]));
         if ($resumedGameId !== null && isset($this->games[$resumedGameId])) {
             $this->sendResumedGame($from, $resumedGameId, 'Votre adversaire s’est reconnecté. La partie reprend.');
+        } else {
+            // Après un redémarrage du service, l’IA peut se reconnecter avant
+            // le navigateur. Lorsque le joueur humain revient avec sa session
+            // persistante, retenter alors la restauration de leur partie.
+            $this->tryRestoreGamesForUser((int) $session['id']);
         }
         $this->sendConnectedPlayersList($from);
     }
@@ -1901,6 +1911,24 @@ class MinesweeperServer implements MessageComponentInterface {
         ]);
     }
 
+    protected function handleForfeitGame(ConnectionInterface $from, array $data): void {
+        $requestedGameId = trim((string) ($data['game_id'] ?? ''));
+        if ($requestedGameId === '' || !isset($this->games[$requestedGameId])) {
+            $this->sendError($from, 'Partie active introuvable.');
+            return;
+        }
+        if (!in_array($from->resourceId, $this->games[$requestedGameId]['players'], true)) {
+            $this->sendError($from, 'Seul un joueur de la partie peut abandonner.');
+            return;
+        }
+
+        $this->logger->info('Abandon volontaire de la partie.', [
+            'game_id' => $requestedGameId,
+            'player_connection_id' => $from->resourceId,
+        ]);
+        $this->endGame($from, $requestedGameId, $from->resourceId, null, false, null, 'forfeit');
+    }
+
     protected function handleReadyForNewGame(ConnectionInterface $from, $data) {
         $gameId = $data['game_id'] ?? '';
         if (!isset($this->games[$gameId]) || !in_array($from->resourceId, $this->games[$gameId]['players'], true)) {
@@ -1958,7 +1986,7 @@ class MinesweeperServer implements MessageComponentInterface {
         return true;
     }
 
-    protected function endGame(ConnectionInterface $from, $gameId, $loserId = null, $losingCell = null, $isDraw = false, $explicitWinnerId = null) {
+    protected function endGame(ConnectionInterface $from, $gameId, $loserId = null, $losingCell = null, $isDraw = false, $explicitWinnerId = null, ?string $endReason = null) {
         if (!isset($this->games[$gameId])) return;
         
         $game = $this->games[$gameId];
@@ -1971,12 +1999,29 @@ class MinesweeperServer implements MessageComponentInterface {
         $eloChanges = $this->handleGameOver($game, $gameId, $winnerId, $isDraw, $losingCell, $flagScores);
         // Révéler toutes les cellules du plateau
         $this->revealAllCells($this->games[$gameId]['board']);
+        if ($endReason === 'forfeit' && $loserId !== null) {
+            try {
+                $conversationId = $this->chatRepository->gameConversation($gameId, array_map(
+                    fn($playerResourceId) => (int) $this->players[$playerResourceId]['id'],
+                    $game['players']
+                ));
+                $this->chatRepository->systemMessage($conversationId, $this->players[$loserId]['username'] . ' a abandonné la partie.');
+            } catch (Throwable $e) {
+                $this->logger->warning('Impossible d’ajouter le message d’abandon au chat.', ['game_id' => $gameId, 'error' => $e->getMessage()]);
+            }
+        }
         
         // Notifier les joueurs
         foreach ($game['players'] as $playerId) {
             $connection = $this->getConnectionFromPlayerId($playerId);
             if ($connection) {
-                $message = $isDraw ? 'La partie se termine par une égalité!' : ($winnerId === $playerId ? 'Vous avez gagné!' : 'Vous avez perdu!');
+                if ($endReason === 'forfeit') {
+                    $message = $winnerId === $playerId
+                        ? 'Votre adversaire a abandonné. Vous avez gagné!'
+                        : 'Vous avez abandonné. Vous avez perdu!';
+                } else {
+                    $message = $isDraw ? 'La partie se termine par une égalité!' : ($winnerId === $playerId ? 'Vous avez gagné!' : 'Vous avez perdu!');
+                }
                 $connection->send(json_encode([
                     'type' => 'game_over',
                     'game_id' => $gameId,
@@ -1986,6 +2031,7 @@ class MinesweeperServer implements MessageComponentInterface {
                     'flagScores' => $flagScores,
                     'eloChanges' => $this->formatEloChanges($game, $eloChanges),
                     'losingCell' => $losingCell,
+                    'endReason' => $endReason,
                     'players' => $this->getConnectedPlayers()
                 ]));
             }
@@ -2000,11 +2046,14 @@ class MinesweeperServer implements MessageComponentInterface {
                         'type' => 'game_over',
                         'game_id' => $gameId,
                         'winner_name' => $winnerName,
-                        'message' => $isDraw ? 'La partie se termine par une égalité!' : "La partie est terminée ! Le vainqueur est $winnerName.",
+                        'message' => $endReason === 'forfeit'
+                            ? $this->players[$loserId]['username'] . " a abandonné. Le vainqueur est $winnerName."
+                            : ($isDraw ? 'La partie se termine par une égalité!' : "La partie est terminée ! Le vainqueur est $winnerName."),
                         'board' => $this->games[$gameId]['board'],  // Envoyer le plateau complet révélé
                         'flagScores' => $flagScores,
                         'eloChanges' => $this->formatEloChanges($game, $eloChanges),
-                        'losingCell' => $losingCell
+                        'losingCell' => $losingCell,
+                        'endReason' => $endReason
                     ]));
                 }
             }
@@ -2135,7 +2184,7 @@ class MinesweeperServer implements MessageComponentInterface {
     protected function loadRecoverableGames(): void {
         try {
             $rows = $this->db->getPDO()->query(
-                "SELECT game_id, player1_id, player2_id, turn_user_id, state_json FROM active_games WHERE updated_at >= NOW() - INTERVAL 24 HOUR"
+                "SELECT game_id, player1_id, player2_id, turn_user_id, state_json FROM active_games WHERE updated_at >= NOW() - INTERVAL 24 HOUR ORDER BY updated_at DESC"
             )->fetchAll(PDO::FETCH_ASSOC);
             foreach ($rows as $row) {
                 $state = json_decode($row['state_json'], true);
@@ -2177,6 +2226,10 @@ class MinesweeperServer implements MessageComponentInterface {
     }
 
     protected function deletePersistedGame(string $gameId): void {
+        if (isset($this->recoverableGameTimers[$gameId])) {
+            \React\EventLoop\Loop::cancelTimer($this->recoverableGameTimers[$gameId]);
+            unset($this->recoverableGameTimers[$gameId]);
+        }
         unset($this->recoverableGames[$gameId]);
         try {
             $stmt = $this->db->getPDO()->prepare('DELETE FROM active_games WHERE game_id = :game_id');
@@ -2195,7 +2248,14 @@ class MinesweeperServer implements MessageComponentInterface {
                     if ((int) $player['id'] === $participantId) { $resources[$participantId] = $resourceId; break; }
                 }
             }
-            if (count($resources) !== 2) continue;
+            if (count($resources) !== 2) {
+                if ($this->isAiUserConnected($userId)) $this->scheduleRecoverableGameExpiry($gameId, 60);
+                continue;
+            }
+            if (array_filter($resources, fn($resourceId) => $this->isPlayerInGame($resourceId))) {
+                $this->discardRecoverableGame($gameId, 'instantané concurrent pour un joueur déjà en partie');
+                continue;
+            }
             $state = $snapshot['state'];
             $inviter = $resources[(int) $state['inviter_user_id']] ?? reset($resources);
             $invitee = $resources[(int) $state['invitee_user_id']] ?? end($resources);
@@ -2206,6 +2266,10 @@ class MinesweeperServer implements MessageComponentInterface {
                 'isPrivate' => (bool) ($state['isPrivate'] ?? true), 'spectators' => [],
             ];
             $this->chatRepository->gameConversation($gameId, array_map('intval', $snapshot['player_user_ids']));
+            if (isset($this->recoverableGameTimers[$gameId])) {
+                \React\EventLoop\Loop::cancelTimer($this->recoverableGameTimers[$gameId]);
+                unset($this->recoverableGameTimers[$gameId]);
+            }
             unset($this->recoverableGames[$gameId]);
             foreach ($this->games[$gameId]['players'] as $resourceId) {
                 $connection = $this->getConnectionFromPlayerId($resourceId);
@@ -2220,6 +2284,46 @@ class MinesweeperServer implements MessageComponentInterface {
             }
             $this->logger->info('Partie restaurée après redémarrage.', ['game_id' => $gameId]);
         }
+    }
+
+    protected function isAiUserConnected(int $userId): bool {
+        foreach ($this->players as $player) {
+            if ((int) ($player['id'] ?? 0) === $userId) return !empty($player['is_ai']);
+        }
+        return false;
+    }
+
+    protected function scheduleRecoverableGameExpiry(string $gameId, int $seconds): void {
+        if (isset($this->recoverableGameTimers[$gameId])) return;
+        $this->recoverableGameTimers[$gameId] = \React\EventLoop\Loop::addTimer($seconds, function () use ($gameId): void {
+            unset($this->recoverableGameTimers[$gameId]);
+            if (!isset($this->recoverableGames[$gameId])) return;
+            $snapshot = $this->recoverableGames[$gameId];
+            $connectedUserIds = array_map(static fn($player) => (int) ($player['id'] ?? 0), $this->players);
+            $missing = array_diff($snapshot['player_user_ids'], $connectedUserIds);
+            if (!$missing) {
+                $this->tryRestoreGamesForUser((int) $snapshot['player_user_ids'][0]);
+                return;
+            }
+            $this->discardRecoverableGame($gameId, 'adversaire absent après 60 secondes');
+            $this->broadcastConnectedPlayersList(0);
+        });
+    }
+
+    protected function discardRecoverableGame(string $gameId, string $reason): void {
+        $snapshot = $this->recoverableGames[$gameId] ?? null;
+        if (!$snapshot) return;
+        try {
+            $stmt = $this->db->getPDO()->prepare('UPDATE users SET games_played=GREATEST(games_played-1,0) WHERE id IN (:player1,:player2)');
+            $stmt->execute([
+                'player1' => (int) $snapshot['player_user_ids'][0],
+                'player2' => (int) $snapshot['player_user_ids'][1],
+            ]);
+        } catch (Throwable $e) {
+            $this->logger->warning('Impossible d’annuler les compteurs de la partie récupérable.', ['game_id' => $gameId, 'error' => $e->getMessage()]);
+        }
+        $this->deletePersistedGame($gameId);
+        $this->logger->info('Partie récupérable abandonnée.', ['game_id' => $gameId, 'reason' => $reason]);
     }
 
     protected function cancelGameAfterDisconnect($gameId, $disconnectedPlayerId, $otherPlayerId): void {

@@ -212,6 +212,33 @@ outcome_assert($quitServer->cancelled, 'Quitter doit annuler proprement la parti
 outcome_assert(($quitter->messages[0]['type'] ?? null) === 'game_cancelled', 'L’IA doit recevoir la confirmation de sortie.');
 outcome_assert(($opponent->messages[0]['type'] ?? null) === 'player_disconnected', 'L’adversaire doit être averti du départ volontaire.');
 
+class ForfeitTestServer extends MinesweeperServer {
+    public array $result = [];
+    public function __construct() {
+        $this->players = [
+            10 => ['id' => 1, 'username' => 'Alice'],
+            20 => ['id' => 2, 'username' => 'Bob'],
+        ];
+        $this->games = ['forfeit' => ['players' => [10, 20]]];
+        $this->logger = new class { public function info(...$arguments): void {} };
+    }
+    protected function endGame(\Ratchet\ConnectionInterface $from, $gameId, $loserId = null, $losingCell = null, $isDraw = false, $explicitWinnerId = null, ?string $endReason = null) {
+        $this->result = compact('gameId', 'loserId', 'isDraw', 'endReason');
+    }
+    public function forfeit(QuitTestConnection $connection): void {
+        $this->handleForfeitGame($connection, ['game_id' => 'forfeit']);
+    }
+}
+
+$forfeitServer = new ForfeitTestServer();
+$forfeitServer->forfeit($quitter);
+outcome_assert($forfeitServer->result === [
+    'gameId' => 'forfeit',
+    'loserId' => 10,
+    'isDraw' => false,
+    'endReason' => 'forfeit',
+], 'Abandonner doit terminer la partie avec le joueur demandeur comme perdant.');
+
 class UnlimitedFlagTestServer extends MinesweeperServer {
     public function __construct(QuitTestConnection $player, QuitTestConnection $opponent) {
         $this->clients = new SplObjectStorage();

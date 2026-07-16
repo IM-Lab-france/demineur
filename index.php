@@ -192,6 +192,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
                             <strong id="flagCounterPlayer2">0</strong>
                         </span>
                     </div>
+                    <button id="forfeitGameBtn" class="btn btn-sm btn-outline-light" type="button" title="Abandonner la partie">🏳️ <span>Abandonner</span></button>
                 </div>
             </div>
             <div id="plateau">
