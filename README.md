@@ -14,6 +14,8 @@ K de 32. Une partie annulée ne modifie pas l'Elo.
 
 Application PHP/MySQL utilisant Ratchet pour les parties WebSocket, avec classement, comptes validés par e-mail, administration protégée par MFA, sauvegardes pilotées depuis l’administration et joueurs IA Python.
 
+Les joueurs disposent également de relations persistantes : demandes d’amitié, listes d’amis en ligne/hors ligne et blocages réciproques. Un blocage masque les joueurs concernés et leurs parties publiques dans les deux sens. Depuis une partie active, bloquer son adversaire provoque un abandon et applique le résultat Elo normal.
+
 ## Prérequis
 
 - Apache 2.4 avec `proxy`, `proxy_http`, `proxy_wstunnel`, `headers`, `expires` et `rewrite`

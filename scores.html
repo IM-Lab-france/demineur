@@ -6,7 +6,7 @@
     <meta name="ws-url" content="">
     <title>Scores des Joueurs</title>
     <link href="/assets/vendor/bootstrap/4.5.2/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css"> <!-- Style commun -->
+    <link rel="stylesheet" href="styles.css?v=20260716-social2"> <!-- Style commun -->
     <!-- Ajout du favicon -->
     <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
 </head>
@@ -25,6 +25,7 @@
                 <li class="nav-item">
                     <a class="nav-link" href="scores.html">Scores</a>
                 </li>
+                <li class="nav-item"><button id="socialPanelToggle" class="btn btn-link nav-link" type="button">Relations <span id="socialBadge" class="badge badge-danger hidden">0</span></button></li>
                 <li class="nav-item">
                     <a id="logoutLink" class="nav-link text-danger" href="#">Déconnexion</a>
                 </li>
@@ -32,6 +33,18 @@
         </div>
         <span id="welcomeMessage" class="navbar-text ml-auto pr-3">Bienvenue, <span id="navbarUserDisplay"></span></span>
     </nav>
+
+    <aside id="socialPanel" class="social-panel" aria-hidden="true" aria-labelledby="socialPanelTitle">
+        <header class="social-panel-header"><h2 id="socialPanelTitle">Relations</h2><button id="socialPanelClose" type="button" class="close" aria-label="Fermer">×</button></header>
+        <label class="social-preference"><input id="friendRequestsEnabled" type="checkbox" checked> Autoriser les demandes d’amitié</label>
+        <div id="socialNotice" class="small" role="status" aria-live="polite"></div>
+        <section><h3>Demandes reçues</h3><div id="incomingFriendRequests"></div></section>
+        <section><h3>Demandes envoyées</h3><div id="outgoingFriendRequests"></div></section>
+        <section><h3>Amis connectés</h3><div id="onlineFriends"></div></section>
+        <section><h3>Amis hors ligne</h3><div id="offlineFriends"></div></section>
+        <section><h3>Joueurs bloqués</h3><div id="blockedUsers"></div></section>
+        <section><h3>Notifications</h3><div id="socialNotifications"></div></section>
+    </aside><div id="socialPanelBackdrop" class="social-panel-backdrop" hidden></div>
 
     
     <div id="scoresContainer" class="container text-center mt-5">
@@ -55,6 +68,7 @@
                         <th>Égalités</th>
                         <th>Classement Elo</th>
                         <th>Pourcentage de Victoires</th>
+                        <th>Relations</th>
                     </tr>
                 </thead>
                 <tbody id="scoresTable">
@@ -66,6 +80,6 @@
     
     <script defer src="/assets/vendor/jquery/jquery-3.5.1.slim.min.js"></script>
     <script defer src="/assets/vendor/bootstrap/4.5.2/bootstrap.bundle.min.js"></script>
-    <script defer src="scores.js?v=20260715-logout"></script> <!-- Script spécifique pour gérer les scores -->
+    <script defer src="scores.js?v=20260716-social7"></script>
 </body>
 </html>

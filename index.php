@@ -35,6 +35,9 @@ if (!is_dir(__DIR__ . '/vendor')) {
                 <li class="nav-item">
                     <a class="nav-link" href="scores.html">Scores</a>
                 </li>
+                <li class="nav-item">
+                    <button id="socialPanelToggle" class="btn btn-link nav-link" type="button" aria-controls="socialPanel" aria-expanded="false">Relations <span id="socialBadge" class="badge badge-danger hidden">0</span></button>
+                </li>
                 <li>
                     <button id="muteButton" class="btn btn-light" aria-label="Couper ou rétablir le son">🔊</button>
                 </li>
@@ -45,6 +48,19 @@ if (!is_dir(__DIR__ . '/vendor')) {
         </div>
         <span id="welcomeMessage" class="navbar-text ml-auto pr-3">Bienvenue, <span id="navbarUserDisplay"></span></span>
     </nav>
+
+    <aside id="socialPanel" class="social-panel" aria-hidden="true" aria-labelledby="socialPanelTitle">
+        <header class="social-panel-header"><h2 id="socialPanelTitle">Relations</h2><button id="socialPanelClose" type="button" class="close" aria-label="Fermer">×</button></header>
+        <label class="social-preference"><input id="friendRequestsEnabled" type="checkbox" checked> Autoriser les demandes d’amitié</label>
+        <div id="socialNotice" class="small" role="status" aria-live="polite"></div>
+        <section><h3>Demandes reçues</h3><div id="incomingFriendRequests"></div></section>
+        <section><h3>Demandes envoyées</h3><div id="outgoingFriendRequests"></div></section>
+        <section><h3>Amis connectés</h3><div id="onlineFriends"></div></section>
+        <section><h3>Amis hors ligne</h3><div id="offlineFriends"></div></section>
+        <section><h3>Joueurs bloqués</h3><div id="blockedUsers"></div></section>
+        <section><h3>Notifications</h3><div id="socialNotifications"></div></section>
+    </aside>
+    <div id="socialPanelBackdrop" class="social-panel-backdrop" hidden></div>
 
     <!-- Aide Overlay -->
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" title="Connexion…">
@@ -149,6 +165,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
             <div id="gameStatus" aria-live="polite">
                 <div id="currentTurnDisplay">
                     <div id="currentTurnText"></div>
+                    <div id="gameRelations" class="game-relations" aria-label="Relations avec les participants"></div>
                     <div id="gameCounters">
                         <span class="game-counter mine-counter" aria-label="Nombre total de mines">
                             <span class="counter-icon" aria-hidden="true">💣</span>

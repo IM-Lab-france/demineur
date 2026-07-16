@@ -369,6 +369,37 @@ td.revealed {
     gap: 12px;
 }
 
+.social-panel {
+    position: fixed;
+    z-index: 1300;
+    inset: 0 auto 0 0;
+    width: min(390px, 92vw);
+    padding: 18px;
+    overflow-y: auto;
+    color: #17212b;
+    background: rgba(250,252,255,.98);
+    box-shadow: 8px 0 28px rgba(0,0,0,.28);
+    transform: translateX(-105%);
+    transition: transform .25s ease;
+}
+.social-panel[aria-hidden="true"] { visibility:hidden; }
+.social-panel.open { transform: translateX(0); }
+.social-panel.open[aria-hidden="false"] { visibility:visible; }
+.social-panel-header { display:flex; justify-content:space-between; align-items:center; }
+.social-panel h2 { margin:0; }
+.social-panel h3 { margin:18px 0 8px; font-size:1rem; }
+.social-panel-backdrop { position:fixed; z-index:1290; inset:0; background:rgba(0,0,0,.42); }
+.social-preference { display:flex; gap:8px; margin:14px 0; }
+.social-entry { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px; margin:5px 0; border:1px solid #d8e0e8; border-radius:8px; background:#fff; }
+.social-entry-main { min-width:0; text-align:left; }
+.social-entry-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }
+.game-relations { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.game-relations .btn { padding:2px 7px; font-size:.75rem; }
+.social-message { display:block; color:#52606d; font-size:.82rem; overflow-wrap:anywhere; }
+.player-list-actions { float:right; display:inline-flex; gap:4px; }
+.friend-player { border-left:4px solid #f0b429 !important; background:#fff9e8; }
+@media (max-width: 576px) { .social-panel { width:100vw; } }
+
 .spectator-mode #gameBoard .cell {
     cursor: default !important;
 }

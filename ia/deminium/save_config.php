@@ -11,6 +11,13 @@ try {
     $iaName = validated_ia_name();
     validated_ia_path($iaName);
     $config = write_ai_config($iaName, $_POST);
+    $friendPolicy = (string) ($_POST['friendPolicy'] ?? 'manual');
+    if (!in_array($friendPolicy, ['manual', 'auto_accept', 'reject'], true)) {
+        throw new InvalidArgumentException('Politique d’amitié invalide.');
+    }
+    $db = new Database();
+    $stmt = $db->getPDO()->prepare('UPDATE users SET ai_friend_policy=:policy WHERE username=:username AND is_ai=1');
+    $stmt->execute(['policy' => $friendPolicy, 'username' => $iaName]);
     $unit = 'minesweeper-ai@' . $iaName . '.service';
     exec('/usr/bin/systemctl is-active --quiet ' . escapeshellarg($unit), $output, $code);
     echo json_encode([

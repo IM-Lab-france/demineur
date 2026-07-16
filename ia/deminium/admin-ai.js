@@ -62,6 +62,7 @@
                     gridSize: form.find('[name="gridSize"]').val(),
                     difficulty: form.find('[name="difficulty"]').val(),
                     inviteTarget: form.find('[name="inviteTarget"]').val(),
+                    friendPolicy: form.find('[name="friendPolicy"]').val(),
                     autoAccept: form.find('[name="autoAccept"]').is(':checked') ? 1 : 0,
                     rematch: form.find('[name="rematch"]').is(':checked') ? 1 : 0,
                     useFlags: form.find('[name="useFlags"]').is(':checked') ? 1 : 0

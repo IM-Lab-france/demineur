@@ -4,6 +4,7 @@ require_admin(false);
 $csrf = csrf_token();
 $players = [];
 $playerBlockingAvailable = false;
+$blockHistory = [];
 try {
     $db = new Database();
     $columns = $db->getPDO()->query("SHOW COLUMNS FROM users LIKE 'is_disabled'")->fetchAll(PDO::FETCH_ASSOC);
@@ -11,6 +12,11 @@ try {
     $players = $db->getPDO()->query(
         'SELECT id, username, games_played, games_won, games_draw, is_admin, is_ai' . ($playerBlockingAvailable ? ', is_disabled' : ', 0 AS is_disabled') . ' FROM users ORDER BY username'
     )->fetchAll(PDO::FETCH_ASSOC);
+    try {
+        $blockHistory = $db->getPDO()->query(
+            "SELECT blocker.username AS blocker, blocked.username AS blocked, b.created_at, b.unblocked_at FROM user_blocks b JOIN users blocker ON blocker.id=b.blocker_id JOIN users blocked ON blocked.id=b.blocked_id WHERE b.created_at >= CURRENT_TIMESTAMP - INTERVAL 90 DAY ORDER BY b.created_at DESC LIMIT 200"
+        )->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $ignored) {}
 } catch (Throwable $e) {
     // Le panneau de contrôle du service reste accessible si MySQL est indisponible.
 }
@@ -104,6 +110,14 @@ try {
             <div class="resource-row"><span>Mémoire</span><div class="resource-track"><span id="memory-bar"></span></div><strong><span id="memory-usage">0</span>%</strong></div>
         </article>
     </section>
+
+    <section class="card mt-4"><div class="card-body">
+        <h2 class="h4">Historique des blocages (90 jours)</h2>
+        <?php if (!$blockHistory): ?><p class="text-muted mb-0">Aucun blocage récent.</p><?php else: ?>
+        <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Joueur</th><th>A bloqué</th><th>Date</th><th>État</th></tr></thead><tbody>
+        <?php foreach ($blockHistory as $block): ?><tr><td><?= htmlspecialchars($block['blocker'], ENT_QUOTES, 'UTF-8') ?></td><td><?= htmlspecialchars($block['blocked'], ENT_QUOTES, 'UTF-8') ?></td><td><?= htmlspecialchars($block['created_at'], ENT_QUOTES, 'UTF-8') ?></td><td><?= $block['unblocked_at'] ? 'Débloqué' : '<span class="badge bg-danger">Actif</span>' ?></td></tr><?php endforeach; ?>
+        </tbody></table></div><?php endif; ?>
+    </div></section>
 
     <section class="card mt-5">
         <div class="card-body">

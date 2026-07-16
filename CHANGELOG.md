@@ -28,6 +28,10 @@
 - Verified e-mail registration, verification resend and secure password recovery.
 - Hashed, expiring and single-use account tokens with session revocation.
 - Administration workflow to create, verify and restore database backups with MFA re-authentication.
+- Mutual friend requests with persistent notifications, online/offline friend lists and per-user request preferences.
+- Bidirectional blocking for invitations, player discovery and public-game observation, including an automatic forfeit when blocking an active opponent.
+- Social actions on the home page, rankings, active games and spectator view, plus configurable AI friend-request policies.
+- A 90-day blocking audit visible to administrators.
 
 ### Changed
 

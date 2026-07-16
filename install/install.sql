@@ -18,6 +18,8 @@ CREATE TABLE `users` (
   `elo_rating` int NOT NULL DEFAULT '1200',
   `elo_games` int unsigned NOT NULL DEFAULT '0',
   `stats_reset_at` timestamp NULL DEFAULT NULL,
+  `friend_requests_enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `ai_friend_policy` enum('manual','auto_accept','reject') NOT NULL DEFAULT 'manual',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username_UNIQUE` (`username`),
   UNIQUE KEY `uq_users_email` (`email`),
@@ -134,3 +136,5 @@ CREATE TABLE `auth_sessions` (
   KEY `idx_auth_sessions_expires` (`expires_at`),
   CONSTRAINT `fk_auth_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+SOURCE install/migrations/20260716_social_graph.sql;

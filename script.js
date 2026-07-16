@@ -247,6 +247,7 @@ function connectWebSocket() {
                 setElementDisplay(document.getElementById('availableUser'), 'block');
                 refreshPlayersList(data.players);
                 requestActiveGames();
+                requestSocialState();
                 clearInterval(refreshInterval);
                 refreshInterval = setInterval(requestActiveGames, 5000);
                 break;
@@ -280,6 +281,15 @@ function connectWebSocket() {
                 renderPublicGames(data.games);
                 break;
 
+            case 'social_state':
+                renderSocialState(data);
+                break;
+
+            case 'social_action_success':
+                showSocialNotice(data.message || 'Action effectuée.', false);
+                requestSocialState();
+                break;
+
             case 'spectator_join_success':
                 isSpectating = true;
                 currentGameId = data.game_id;
@@ -291,6 +301,7 @@ function connectWebSocket() {
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 document.getElementById('currentTurnText').textContent = `Observation : tour de ${data.currentPlayer}`;
+                renderGameRelations(data.participants);
                 break;
 
             case 'spectator_left':
@@ -310,6 +321,7 @@ function connectWebSocket() {
                 // Afficher le joueur qui commence
                 currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = 'C\'est à ' + data.currentPlayer + ' de commencer.'; // Afficher qui commence
+                renderGameRelations(data.participants);
 
 
                 logMessage('Tour actuel: ' + data.turn);
@@ -328,6 +340,7 @@ function connectWebSocket() {
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = 'Partie reprise — tour actuel : ' + data.currentPlayer;
+                renderGameRelations(data.participants);
                 showHelpIcon();
                 break;
 
@@ -402,6 +415,7 @@ function connectWebSocket() {
                     showNotYourTurnPopup();
                 }
                 logMessage('Erreur: ' + data.message);
+                if (document.getElementById('socialPanel')?.classList.contains('open')) showSocialNotice(data.message || 'Action impossible.', true);
                 break;
 
            
@@ -525,18 +539,26 @@ function refreshPlayersList(players) {
     } else {
         filteredPlayers.forEach(player => {
             const li = document.createElement('li');
-            li.textContent = player.username;
+            li.className = `list-group-item${player.isFriend ? ' friend-player' : ''}`;
+            const label = document.createElement('span');
+            label.textContent = `${player.isFriend ? '★ ' : ''}${player.username}${player.isAi ? ' 🤖' : ''}`;
+            li.appendChild(label);
             li.dataset.playerId = player.id;
             li.tabIndex = 0;
             li.setAttribute('role', 'button');
             li.setAttribute('aria-label', `Inviter ${player.username}`);
-            li.addEventListener('click', () => invitePlayer(player.id));
+            li.addEventListener('click', event => { if (!event.target.closest('button')) invitePlayer(player.id); });
             li.addEventListener('keydown', (event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
                     invitePlayer(player.id);
                 }
             });
+            const actions = document.createElement('span');
+            actions.className = 'player-list-actions';
+            if (!player.isFriend) actions.appendChild(socialActionButton('🤝', 'btn-outline-success', () => sendFriendRequest(player)));
+            actions.appendChild(socialActionButton('🚫', 'btn-outline-danger', () => socialAction('block_user', player.id, `Bloquer ${player.username} ?`)));
+            li.appendChild(actions);
             playersList.appendChild(li);
         });
     }
@@ -586,6 +608,135 @@ function requestActiveGames() {
         socket.send(JSON.stringify({ type: 'get_active_games' }));
     }
 }
+
+function requestSocialState() {
+    if (socket?.readyState === WebSocket.OPEN && username) socket.send(JSON.stringify({ type: 'get_social_state' }));
+}
+
+function socialActionButton(label, variant, callback) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `btn btn-sm ${variant}`;
+    button.textContent = label;
+    const descriptions = { '🎮': 'Inviter à jouer', '🤝': 'Ajouter en ami', '👍': 'Accepter', '👎': 'Refuser', '❌': 'Retirer des amis', '🚫': 'Bloquer', '🔓': 'Débloquer' };
+    if (descriptions[label]) { button.title = descriptions[label]; button.setAttribute('aria-label', descriptions[label]); }
+    button.addEventListener('click', event => { event.stopPropagation(); callback(); });
+    return button;
+}
+
+function socialAction(type, userId, confirmation = '') {
+    if (confirmation && !window.confirm(confirmation)) return;
+    socket.send(JSON.stringify({ type, userId: Number(userId) }));
+}
+
+function sendFriendRequest(player) {
+    const message = window.prompt(`Message pour ${player.username} (facultatif, 300 caractères maximum)`, '');
+    if (message === null) return;
+    socket.send(JSON.stringify({ type: 'send_friend_request', userId: Number(player.id), message: message.slice(0, 300) }));
+}
+
+function renderGameRelations(participants) {
+    const container = document.getElementById('gameRelations');
+    container.textContent = '';
+    (participants || []).filter(player => Number(player.id) !== Number(currentPlayerId)).forEach(player => {
+        const name = document.createElement('span');
+        name.textContent = `${player.username}${Number(player.is_ai) ? ' 🤖' : ''}`;
+        const friend = socialActionButton('🤝', 'btn-outline-primary', () => sendFriendRequest(player));
+        const block = socialActionButton('🚫', 'btn-outline-danger', () => socialAction('block_user', player.id, `Bloquer ${player.username} ? La partie en cours sera perdue.`));
+        container.append(name, friend, block);
+    });
+}
+
+function showSocialNotice(message, error = false) {
+    const notice = document.getElementById('socialNotice');
+    notice.className = `small ${error ? 'text-danger' : 'text-success'}`;
+    notice.textContent = message;
+}
+
+function socialEntry(person, actions = [], detail = '') {
+    const entry = document.createElement('div');
+    entry.className = 'social-entry';
+    const main = document.createElement('div');
+    main.className = 'social-entry-main';
+    const name = document.createElement('strong');
+    name.textContent = `${person.username}${Number(person.is_ai) ? ' 🤖' : ''}`;
+    main.appendChild(name);
+    if (detail) {
+        const small = document.createElement('span');
+        small.className = 'social-message';
+        small.textContent = detail;
+        main.appendChild(small);
+    }
+    const controls = document.createElement('div');
+    controls.className = 'social-entry-actions';
+    actions.forEach(action => controls.appendChild(socialActionButton(action.label, action.variant, action.callback)));
+    entry.append(main, controls);
+    return entry;
+}
+
+function replaceSocialList(id, entries, emptyMessage) {
+    const container = document.getElementById(id);
+    container.textContent = '';
+    if (!entries.length) {
+        const empty = document.createElement('p');
+        empty.className = 'small text-muted';
+        empty.textContent = emptyMessage;
+        container.appendChild(empty);
+        return;
+    }
+    entries.forEach(entry => container.appendChild(entry));
+}
+
+function renderSocialState(state) {
+    const friends = Array.isArray(state.friends) ? state.friends : [];
+    const friendRow = friend => socialEntry(friend, [
+        ...(friend.online ? [{ label: '🎮', variant: 'btn-outline-primary', callback: () => invitePlayer(friend.id) }] : []),
+        { label: '❌', variant: 'btn-outline-secondary', callback: () => socialAction('remove_friend', friend.id, `Supprimer ${friend.username} de vos amis ?`) },
+        { label: '🚫', variant: 'btn-outline-danger', callback: () => socialAction('block_user', friend.id, `Bloquer ${friend.username} ?`) },
+    ], friend.online ? 'En ligne' : `Hors ligne · dernière activité ${new Date(friend.last_active).toLocaleString('fr-FR')}`);
+    replaceSocialList('onlineFriends', friends.filter(friend => friend.online).map(friendRow), 'Aucun ami connecté.');
+    replaceSocialList('offlineFriends', friends.filter(friend => !friend.online).map(friendRow), 'Aucun ami hors ligne.');
+    replaceSocialList('incomingFriendRequests', (state.incoming || []).map(person => socialEntry(person, [
+        { label: '👍', variant: 'btn-success', callback: () => socialAction('accept_friend_request', person.id) },
+        { label: '👎', variant: 'btn-outline-secondary', callback: () => socialAction('decline_friend_request', person.id) },
+        { label: '🚫', variant: 'btn-outline-danger', callback: () => socialAction('block_user', person.id, `Bloquer ${person.username} ?`) },
+    ], person.message || 'Demande d’amitié')), 'Aucune demande reçue.');
+    replaceSocialList('outgoingFriendRequests', (state.outgoing || []).map(person => socialEntry(person, [], person.message || 'En attente')), 'Aucune demande envoyée.');
+    replaceSocialList('blockedUsers', (state.blocked || []).map(person => socialEntry(person, [
+        { label: '🔓', variant: 'btn-outline-primary', callback: () => socialAction('unblock_user', person.id) },
+    ], 'Bloqué')), 'Aucun joueur bloqué.');
+    const notifications = state.notifications || [];
+    replaceSocialList('socialNotifications', notifications.map(notification => socialEntry(
+        { username: notification.actor || 'Compte supprimé' }, [],
+        notification.type === 'friend_request' ? 'Nouvelle demande d’amitié' : notification.type === 'friend_accepted' ? 'Demande acceptée' : 'A supprimé votre amitié'
+    )), 'Aucune notification.');
+    const unread = notifications.filter(notification => !notification.read_at).length + (state.incoming || []).length;
+    const badge = document.getElementById('socialBadge');
+    badge.textContent = unread;
+    badge.classList.toggle('hidden', unread === 0);
+    document.getElementById('friendRequestsEnabled').checked = Boolean(state.friendRequestsEnabled);
+}
+
+function setSocialPanel(open) {
+    const panel = document.getElementById('socialPanel');
+    const wasOpen = panel.classList.contains('open');
+    panel.classList.toggle('open', open);
+    panel.setAttribute('aria-hidden', String(!open));
+    document.getElementById('socialPanelToggle').setAttribute('aria-expanded', String(open));
+    document.getElementById('socialPanelBackdrop').hidden = !open;
+    if (open) {
+        requestSocialState();
+    } else if (wasOpen && socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'mark_social_notifications_read' }));
+    }
+}
+
+document.getElementById('socialPanelToggle').addEventListener('click', () => setSocialPanel(true));
+document.getElementById('socialPanelClose').addEventListener('click', () => setSocialPanel(false));
+document.getElementById('socialPanelBackdrop').addEventListener('click', () => setSocialPanel(false));
+document.getElementById('friendRequestsEnabled').addEventListener('change', event => {
+    socket.send(JSON.stringify({ type: 'set_social_preferences', friendRequestsEnabled: event.target.checked }));
+});
 
 function renderPublicGames(games) {
     const list = document.getElementById('publicGames');

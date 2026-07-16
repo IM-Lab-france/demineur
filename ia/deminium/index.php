@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../admin/bootstrap.php';
 require_once __DIR__ . '/ai_config.php';
 require_admin(false);
 $csrf = csrf_token();
+$adminDb = new Database();
 // index.php
 $pluginsDir = './plugins';
 
@@ -70,6 +71,9 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                     $initialRuntimeState = is_readable($initialStateFile) ? json_decode((string) file_get_contents($initialStateFile), true) : null;
                     $inGame = $running && is_array($initialRuntimeState) && !empty($initialRuntimeState['inGame']);
                     $config = read_ai_config($iaName);
+                    $policyStmt = $adminDb->getPDO()->prepare('SELECT ai_friend_policy FROM users WHERE username=:username AND is_ai=1');
+                    $policyStmt->execute(['username' => $iaName]);
+                    $friendPolicy = (string) ($policyStmt->fetchColumn() ?: 'manual');
                     $memory = ['games' => 0, 'wins' => 0, 'losses' => 0, 'draws' => 0, 'moves' => 0, 'decision_ms_total' => 0, 'decision_errors' => 0];
                     $memoryPath = "$iaPath/memory.json";
                     if (is_readable($memoryPath) && filesize($memoryPath) <= 65536) {
@@ -137,6 +141,12 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                                         <option value="human" <?= $config['inviteTarget'] === 'human' ? 'selected' : '' ?>>Joueurs humains</option>
                                         <option value="ai" <?= $config['inviteTarget'] === 'ai' ? 'selected' : '' ?>>Autres IA</option>
                                         <option value="all" <?= $config['inviteTarget'] === 'all' ? 'selected' : '' ?>>Tous les joueurs</option>
+                                    </select></label></div>
+                                <div class="form-group"><label>Demandes d’amitié
+                                    <select class="form-control" name="friendPolicy">
+                                        <option value="manual" <?= $friendPolicy === 'manual' ? 'selected' : '' ?>>Validation manuelle</option>
+                                        <option value="auto_accept" <?= $friendPolicy === 'auto_accept' ? 'selected' : '' ?>>Acceptation automatique</option>
+                                        <option value="reject" <?= $friendPolicy === 'reject' ? 'selected' : '' ?>>Toujours refuser</option>
                                     </select></label></div>
                             </div>
                             <div class="option-switches">
