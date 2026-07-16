@@ -18,6 +18,7 @@ let connected = false;
 let currentPlayerId;
 let currentInvitationId = null;
 let isMyTurn = false;
+let isSpectating = false;
 let errorDiv = null;
 let retryInterval = 5000;
 let keepAliveInterval; 
@@ -245,6 +246,9 @@ function connectWebSocket() {
                 setElementDisplay(document.getElementById('logoutLink'), 'block');
                 setElementDisplay(document.getElementById('availableUser'), 'block');
                 refreshPlayersList(data.players);
+                requestActiveGames();
+                clearInterval(refreshInterval);
+                refreshInterval = setInterval(requestActiveGames, 5000);
                 break;
 
             case 'resume_failed':
@@ -269,6 +273,28 @@ function connectWebSocket() {
                     setElementDisplay(document.getElementById('game'), 'block');
                     setElementDisplay(document.getElementById('availableUser'), 'block');
                 }
+                requestActiveGames();
+                break;
+
+            case 'active_games':
+                renderPublicGames(data.games);
+                break;
+
+            case 'spectator_join_success':
+                isSpectating = true;
+                currentGameId = data.game_id;
+                setGameActive(true);
+                document.body.classList.add('spectator-mode');
+                setElementDisplay(document.getElementById('availableUser'), 'none');
+                setElementDisplay(document.getElementById('gameContainer'), 'flex');
+                document.getElementById('leaveSpectatorBtn').classList.remove('hidden');
+                displayGameBoard(data.board);
+                updateGameStatus(data.board, data.mineCount, data.currentPlayer);
+                document.getElementById('currentTurnText').textContent = `Observation : tour de ${data.currentPlayer}`;
+                break;
+
+            case 'spectator_left':
+                leaveSpectatorView();
                 break;
 
             case 'game_start':
@@ -310,7 +336,7 @@ function connectWebSocket() {
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 // Mettre à jour le nom du joueur dont c'est le tour
                 currentPlayerDisplay = document.getElementById('currentTurnText');
-                currentPlayerDisplay.textContent = 'Tour actuel: ' + data.currentPlayer; // Affiche le joueur actuel
+                currentPlayerDisplay.textContent = (isSpectating ? 'Observation — tour de : ' : 'Tour actuel: ') + data.currentPlayer;
                 break;
 
             case 'invite':
@@ -443,6 +469,7 @@ function attemptReconnect() {
 
 window.addEventListener('beforeunload', () => {
     clearInterval(keepAliveInterval);
+    clearInterval(refreshInterval);
     clearTimeout(reconnectTimeout);
 });
 
@@ -519,6 +546,7 @@ function refreshPlayersList(players) {
 function invitePlayer(playerId) {
     // Afficher la popin
     const inviteModal = document.getElementById('inviteSettingsModal');
+    document.getElementById('privateGame').checked = true;
     setElementDisplay(inviteModal, 'block');
 
     // Gestion de la fermeture de la popin
@@ -535,13 +563,15 @@ function invitePlayer(playerId) {
         // Récupérer les choix de l'utilisateur
         const gridSize = document.getElementById('gridSize').value;
         const difficulty = document.getElementById('difficulty').value;
+        const isPrivate = document.getElementById('privateGame').checked;
 
         // Envoyer l'invitation avec les paramètres choisis
         socket.send(JSON.stringify({
             type: 'invite',
             invitee: playerId,
             gridSize: gridSize,
-            difficulty: difficulty
+            difficulty: difficulty,
+            isPrivate: isPrivate
         }));
 
         // Masquer la popin après l'envoi
@@ -550,6 +580,58 @@ function invitePlayer(playerId) {
         console.log('Invitation envoyée à ' + playerId + ' avec une grille de ' + gridSize + ' et une difficulté de ' + difficulty + '%');
     };
 }
+
+function requestActiveGames() {
+    if (socket?.readyState === WebSocket.OPEN && username && !currentGameId) {
+        socket.send(JSON.stringify({ type: 'get_active_games' }));
+    }
+}
+
+function renderPublicGames(games) {
+    const list = document.getElementById('publicGames');
+    list.textContent = '';
+    if (!Array.isArray(games) || games.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'list-group-item text-muted';
+        empty.textContent = 'Aucune partie publique en cours';
+        list.appendChild(empty);
+        return;
+    }
+    games.forEach(game => {
+        const item = document.createElement('li');
+        item.className = 'list-group-item public-game-item';
+        const description = document.createElement('span');
+        description.textContent = `${game.players.join(' contre ')} · ${game.gridSize}`;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-sm btn-outline-primary';
+        button.textContent = 'Observer';
+        button.addEventListener('click', () => {
+            socket.send(JSON.stringify({ type: 'add_spectator', gameId: game.gameId }));
+        });
+        item.append(description, button);
+        list.appendChild(item);
+    });
+}
+
+function leaveSpectatorView() {
+    isSpectating = false;
+    currentGameId = undefined;
+    isMyTurn = false;
+    setGameActive(false);
+    document.body.classList.remove('spectator-mode');
+    document.getElementById('leaveSpectatorBtn').classList.add('hidden');
+    setElementDisplay(document.getElementById('gameContainer'), 'none');
+    setElementDisplay(document.getElementById('availableUser'), 'block');
+    clearGameBoard();
+    requestActiveGames();
+}
+
+document.getElementById('leaveSpectatorBtn').addEventListener('click', () => {
+    if (isSpectating && currentGameId && socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'leave_spectator', gameId: currentGameId }));
+    }
+});
 
 function acceptInvite() {
     const inviter = document.getElementById('inviter').textContent;
@@ -798,7 +880,7 @@ function clearPendingCells() {
 }
 
 function updateGameStatus(board, mineCount, currentPlayer) {
-    isMyTurn = currentPlayer === username;
+    isMyTurn = !isSpectating && currentPlayer === username;
     const flags = board.reduce((counts, row) => {
         row.forEach(cell => {
             if (!cell.flagged) return;
@@ -850,6 +932,7 @@ function handleLogoutSuccess() {
 
 // Gestion des cellules
 function revealCell(x, y, cellElement = null) {
+    if (isSpectating) return;
     if (!isMyTurn) {
         showNotYourTurnPopup();
         return;
@@ -875,6 +958,7 @@ function revealCell(x, y, cellElement = null) {
 }
 
 function placeFlag(x, y) {
+    if (isSpectating) return;
     if (!isMyTurn) {
         showNotYourTurnPopup();
         return;
@@ -967,11 +1051,16 @@ document.getElementById('closeModalBtn').addEventListener('click', () => {
     setElementDisplay(document.getElementById('availableUser'), 'block');
     setElementDisplay(document.getElementById('gameContainer'), 'none');
     clearGameBoard();
-    socket.send(JSON.stringify({
-        type: 'refresh_players',
-        game_id: currentGameId
-    }));
+    if (!isSpectating) {
+        socket.send(JSON.stringify({
+            type: 'refresh_players',
+            game_id: currentGameId
+        }));
+    }
     currentGameId = undefined;
+    isSpectating = false;
+    document.body.classList.remove('spectator-mode');
+    document.getElementById('leaveSpectatorBtn').classList.add('hidden');
     setGameActive(false);
 });
 

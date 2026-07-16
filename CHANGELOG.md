@@ -6,6 +6,7 @@
 
 - Elo ranking (initial rating 1200, K-factor 32) with per-game rating history.
 - Score resets now exclude archived matches from period rankings and reset Elo to 1200.
+- Private games by default, with opt-in public games and a read-only spectator mode.
 - End-of-game flag scoring: +1 for a correct flag and -1 for an incorrect flag.
 - Persistent `active_games` snapshots and recovery after a WebSocket restart.
 - Daily backups and weekly automated restore verification.

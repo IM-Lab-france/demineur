@@ -362,6 +362,21 @@ td.revealed {
     cursor: not-allowed;
 }
 
+.public-game-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.spectator-mode #gameBoard .cell {
+    cursor: default !important;
+}
+
+.spectator-mode #touchActions {
+    display: none !important;
+}
+
 #gameBoard td:focus-visible {
     outline: 3px solid #0d6efd;
     outline-offset: -3px;

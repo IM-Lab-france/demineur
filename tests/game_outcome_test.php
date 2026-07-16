@@ -243,4 +243,25 @@ $unlimitedFlagServer = new UnlimitedFlagTestServer($flagPlayer, $flagOpponent);
 $unlimitedFlagServer->addExtraFlag($flagPlayer);
 outcome_assert($unlimitedFlagServer->board()[0][1]['flagged'] === true, 'Un joueur doit pouvoir dépasser le nombre de mines en drapeaux.');
 
+class PublicGamesTestServer extends MinesweeperServer {
+    public function __construct() {
+        $this->players = [
+            10 => ['id' => 1, 'username' => 'Alice'],
+            20 => ['id' => 2, 'username' => 'Bob'],
+        ];
+        $board = [[['revealed' => false, 'flagged' => false]]];
+        $this->games = [
+            'public' => ['players' => [10, 20], 'board' => $board, 'isPrivate' => false, 'spectators' => [30]],
+            'private' => ['players' => [10, 20], 'board' => $board, 'isPrivate' => true, 'spectators' => []],
+        ];
+    }
+    public function listGames(QuitTestConnection $connection): void { $this->handleGetActiveGames($connection); }
+}
+
+$gamesConnection = new QuitTestConnection(30);
+(new PublicGamesTestServer())->listGames($gamesConnection);
+$listedGames = $gamesConnection->messages[0]['games'] ?? [];
+outcome_assert(count($listedGames) === 1 && $listedGames[0]['gameId'] === 'public', 'Seules les parties publiques doivent être proposées aux spectateurs.');
+outcome_assert($listedGames[0]['spectatorCount'] === 1, 'La liste publique doit exposer le nombre de spectateurs.');
+
 echo "Tests des règles de fin de partie réussis.\n";

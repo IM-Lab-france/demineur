@@ -287,6 +287,9 @@ class MinesweeperServer implements MessageComponentInterface {
             case 'add_spectator':
                 $this->addSpectator($from, $data);
                 break;
+            case 'leave_spectator':
+                $this->removeSpectator($from, $data);
+                break;
             default:
                 $this->sendError($from, 'Action inconnue.', ['action' => $data['type']]);
                 break;
@@ -493,8 +496,12 @@ class MinesweeperServer implements MessageComponentInterface {
         $gameId = $data['gameId'] ?? '';
     
         if (isset($this->games[$gameId])) {
-            if ($this->isPlayerInGame($from->resourceId)) {
-                $this->sendError($from, 'Un joueur actif ne peut pas devenir spectateur.');
+            if (!empty($this->games[$gameId]['isPrivate'])) {
+                $this->sendError($from, 'Cette partie est privée.');
+                return;
+            }
+            if ($this->isPlayerInGame($from->resourceId) || $this->isSpectatorInGame($from->resourceId)) {
+                $this->sendError($from, 'Vous participez déjà à une partie.');
                 return;
             }
             // Ajouter le spectateur à la liste des spectateurs de cette partie
@@ -515,8 +522,12 @@ class MinesweeperServer implements MessageComponentInterface {
     
             $from->send(json_encode([
                 'type' => 'spectator_join_success',
+                'game_id' => $gameId,
                 'message' => 'Vous suivez maintenant la partie ' . $gameId,
                 'gridSize' => ['width' => $gridWidth, 'height' => $gridHeight], // Envoi de la taille de la grille
+                'board' => $this->maskMinesForPlayer($board),
+                'mineCount' => $this->games[$gameId]['mineCount'],
+                'currentPlayer' => $this->players[$this->games[$gameId]['currentTurn']]['username'],
                 'players' => [
                     'player1' => $player1Name,
                     'player2' => $player2Name
@@ -528,6 +539,17 @@ class MinesweeperServer implements MessageComponentInterface {
                 'message' => 'Partie introuvable.'
             ]));
         }
+    }
+
+    protected function removeSpectator(ConnectionInterface $from, array $data): void {
+        $gameId = (string) ($data['gameId'] ?? '');
+        if (isset($this->games[$gameId]['spectators'])) {
+            $this->games[$gameId]['spectators'] = array_values(array_filter(
+                $this->games[$gameId]['spectators'],
+                fn($resourceId) => $resourceId !== $from->resourceId
+            ));
+        }
+        $from->send(json_encode(['type' => 'spectator_left', 'game_id' => $gameId]));
     }
 
 
@@ -544,6 +566,7 @@ class MinesweeperServer implements MessageComponentInterface {
                         'board' => $maskedBoard,
                         'turn' => $this->games[$gameId]['currentTurn'],
                         'currentPlayer' => $this->players[$this->games[$gameId]['currentTurn']]['username']
+                        ,'mineCount' => $this->games[$gameId]['mineCount']
                     ]));
                 }
             }
@@ -590,6 +613,7 @@ class MinesweeperServer implements MessageComponentInterface {
         $activeGames = [];
     
         foreach ($this->games as $gameId => $game) {
+            if (!empty($game['isPrivate'])) continue;
             $playerNames = array_map(function ($playerId) {
                 return $this->players[$playerId]['username']; // Récupérer les noms des joueurs
             }, $game['players']);
@@ -597,7 +621,9 @@ class MinesweeperServer implements MessageComponentInterface {
             // Inclure l'ID de la partie
             $activeGames[] = [
                 'gameId' => $gameId, // Envoi de l'ID de la partie
-                'players' => $playerNames
+                'players' => $playerNames,
+                'gridSize' => count($game['board']) . 'x' . count($game['board'][0]),
+                'spectatorCount' => count($game['spectators'] ?? [])
             ];
         }
     
@@ -1081,14 +1107,14 @@ class MinesweeperServer implements MessageComponentInterface {
             $this->sendError($from, 'Vous ne pouvez pas vous inviter vous-même.');
             return;
         }
-        if ($this->isPlayerInGame($from->resourceId) || $this->hasPendingInvitation($from->resourceId)) {
+        if ($this->isPlayerInGame($from->resourceId) || $this->isSpectatorInGame($from->resourceId) || $this->hasPendingInvitation($from->resourceId)) {
             $this->sendError($from, 'Vous êtes déjà en partie ou avez une invitation en attente.');
             return;
         }
 
         foreach ($this->clients as $client) {
             if (isset($this->players[$client->resourceId]) && $this->players[$client->resourceId]['id'] === $inviteeId) {
-                if ($this->isPlayerInGame($client->resourceId) || $this->hasPendingInvitation($client->resourceId)) {
+                if ($this->isPlayerInGame($client->resourceId) || $this->isSpectatorInGame($client->resourceId) || $this->hasPendingInvitation($client->resourceId)) {
                     $this->sendError($from, 'Ce joueur n’est plus disponible.');
                     return;
                 }
@@ -1101,6 +1127,7 @@ class MinesweeperServer implements MessageComponentInterface {
                     'invitee' => $client->resourceId,
                     'gridSize' => $data['gridSize'],
                     'difficulty' => $data['difficulty']
+                    ,'isPrivate' => !isset($data['isPrivate']) || $data['isPrivate'] !== false
                     ,'createdAt' => time()
                 ];
 
@@ -1153,7 +1180,8 @@ class MinesweeperServer implements MessageComponentInterface {
                 $this->sendError($from, 'Cette invitation ne vous appartient pas ou a expiré.');
                 return;
             }
-            if ($this->isPlayerInGame($from->resourceId) || $this->isPlayerInGame($invitation['inviter'])) {
+            if ($this->isPlayerInGame($from->resourceId) || $this->isSpectatorInGame($from->resourceId) ||
+                $this->isPlayerInGame($invitation['inviter']) || $this->isSpectatorInGame($invitation['inviter'])) {
                 unset($this->pendingInvitations[$invitationId]);
                 $this->sendError($from, 'Un des joueurs n’est plus disponible.');
                 return;
@@ -1196,6 +1224,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 'currentTurn' => $firstPlay,
                 'moves' => 0,
                 'mineCount' => $numMines,
+                'isPrivate' => (bool) ($invitation['isPrivate'] ?? true),
                 'spectators' => []
             ];
             $this->persistGame($gameId);
@@ -1939,6 +1968,7 @@ class MinesweeperServer implements MessageComponentInterface {
         if (!$player1 || !$player2 || !$turnUser) return;
         $state = [
             'board' => $game['board'], 'moves' => $game['moves'], 'mineCount' => $game['mineCount'],
+            'isPrivate' => (bool) ($game['isPrivate'] ?? true),
             'inviter_user_id' => $this->players[$game['inviter']]['id'] ?? $player1,
             'invitee_user_id' => $this->players[$game['invitee']]['id'] ?? $player2,
         ];
@@ -1979,7 +2009,8 @@ class MinesweeperServer implements MessageComponentInterface {
             $this->games[$gameId] = [
                 'players' => array_values($resources), 'inviter' => $inviter, 'invitee' => $invitee,
                 'board' => $state['board'], 'currentTurn' => $resources[$snapshot['turn_user_id']],
-                'moves' => (int) ($state['moves'] ?? 0), 'mineCount' => (int) $state['mineCount'], 'spectators' => [],
+                'moves' => (int) ($state['moves'] ?? 0), 'mineCount' => (int) $state['mineCount'],
+                'isPrivate' => (bool) ($state['isPrivate'] ?? true), 'spectators' => [],
             ];
             unset($this->recoverableGames[$gameId]);
             foreach ($this->games[$gameId]['players'] as $resourceId) {
@@ -2062,7 +2093,7 @@ class MinesweeperServer implements MessageComponentInterface {
 
             // Vérifier si le joueur est déjà dans une partie
             foreach ($this->games as $game) {
-                if (in_array($resourceId, $game['players'])) {
+                if (in_array($resourceId, $game['players'], true) || in_array($resourceId, $game['spectators'] ?? [], true)) {
                     $inGame = true;
                     break;
                 }
@@ -2082,6 +2113,13 @@ class MinesweeperServer implements MessageComponentInterface {
     protected function isPlayerInGame($resourceId) {
         foreach ($this->games as $game) {
             if (in_array($resourceId, $game['players'], true)) return true;
+        }
+        return false;
+    }
+
+    protected function isSpectatorInGame($resourceId) {
+        foreach ($this->games as $game) {
+            if (in_array($resourceId, $game['spectators'] ?? [], true)) return true;
         }
         return false;
     }

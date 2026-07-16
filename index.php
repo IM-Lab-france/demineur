@@ -131,6 +131,10 @@ if (!is_dir(__DIR__ . '/vendor')) {
         <div id="availableUser" class="my-3">
             <h3>Joueurs disponibles</h3>
             <ul id="players" class="list-group"></ul>
+            <section id="publicGamesSection" class="public-games mt-4" aria-labelledby="publicGamesTitle">
+                <h3 id="publicGamesTitle">Parties publiques en cours</h3>
+                <ul id="publicGames" class="list-group"></ul>
+            </section>
         </div>
 
         <!-- Invitation -->
@@ -171,6 +175,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
                 <button id="revealModeBtn" class="touch-action active" type="button" aria-pressed="true">👆 Révéler</button>
                 <button id="flagModeBtn" class="touch-action" type="button" aria-pressed="false">🚩 Drapeau</button>
             </div>
+            <button id="leaveSpectatorBtn" class="btn btn-outline-secondary hidden" type="button">Quitter l’observation</button>
         </div>
     </div>
 
@@ -201,6 +206,11 @@ if (!is_dir(__DIR__ . '/vendor')) {
                         <option value="20x20">20x20</option>
                         <option value="30x30">30x30</option>
                     </select>
+                </div>
+                <div class="form-group form-check text-left">
+                    <input id="privateGame" class="form-check-input" type="checkbox" checked>
+                    <label class="form-check-label" for="privateGame">Partie privée</label>
+                    <small class="form-text text-muted">Décochez pour autoriser les spectateurs.</small>
                 </div>
                 <div class="form-group">
                     <label for="difficulty">Difficulté :</label>
