@@ -26,6 +26,7 @@ let isReconnecting = false;
 let logoutInProgress = false;
 let logoutFallbackTimeout;
 let touchActionMode = 'reveal';
+const pendingActionTimers = new Map();
 const mobileGameQuery = window.matchMedia('(max-width: 768px), (pointer: coarse)');
 
 let isMuted = false;
@@ -52,6 +53,7 @@ const registerModal = document.getElementById('registerModal');
 const showRegisterModalLink = document.getElementById('showRegisterModal');
 const showLoginModalLink = document.getElementById('showLoginModal');
 
+const loginForm = document.getElementById('loginForm');
 const loginBtn = document.getElementById('loginBtn');
 const registerBtn = document.getElementById('registerBtn');
 
@@ -280,7 +282,7 @@ function connectWebSocket() {
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
 
                 // Afficher le joueur qui commence
-                currentPlayerDisplay = document.getElementById('currentTurnDisplay');
+                currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = 'C\'est à ' + data.currentPlayer + ' de commencer.'; // Afficher qui commence
 
 
@@ -298,7 +300,7 @@ function connectWebSocket() {
                 setElementDisplay(document.getElementById('gameContainer'), 'flex');
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
-                currentPlayerDisplay = document.getElementById('currentTurnDisplay');
+                currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = 'Partie reprise — tour actuel : ' + data.currentPlayer;
                 showHelpIcon();
                 break;
@@ -307,7 +309,7 @@ function connectWebSocket() {
                 updateGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 // Mettre à jour le nom du joueur dont c'est le tour
-                currentPlayerDisplay = document.getElementById('currentTurnDisplay');
+                currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = 'Tour actuel: ' + data.currentPlayer; // Affiche le joueur actuel
                 break;
 
@@ -322,31 +324,34 @@ function connectWebSocket() {
                 break;
 
             case 'game_over':
-
-                if (data.winner.includes('Vous avez gagné')) {
+                const resultMessage = data.winner || data.message || '';
+                if (resultMessage.includes('Vous avez gagné')) {
                     soundWin.play();
-                } else if (data.winner.includes('La partie se termine par une égalité!')) {
+                } else if (resultMessage.includes('La partie se termine par une égalité!')) {
                     soundTie.play();
                 } else {
                     soundLose.play();
                 }
                 // Fin de partie et affichage du gagnant
                 displayGameBoard(data.board, data.losingCell);
-                showWinnerModal(data.winner, data.game_id);
+                showWinnerModal(resultMessage, data.game_id, data.flagScores);
             
                 hideHelpIcon();
                 break;
                 // Ajout de la gestion de la déconnexion d'un joueur
             case 'player_disconnected':
-                logMessage('Votre adversaire s\'est déconnecté. La partie est annulée.');
-                showWinnerModal('Votre adversaire s\'est déconnecté. La partie est annulée.', currentGameId);
+                logMessage(data.message || 'Votre adversaire s\'est déconnecté. La partie est annulée.');
+                showWinnerModal(data.message || 'Votre adversaire s\'est déconnecté. La partie est annulée.', currentGameId);
+                break;
+            case 'game_cancelled':
+                showWinnerModal(data.message || 'La partie a été quittée.', currentGameId);
                 break;
             case 'player_reconnecting':
-                currentPlayerDisplay = document.getElementById('currentTurnDisplay');
+                currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = data.message;
                 break;
             case 'player_reconnected':
-                currentPlayerDisplay = document.getElementById('currentTurnDisplay');
+                currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = data.message;
                 break;
             case 'logout_success':
@@ -364,7 +369,10 @@ function connectWebSocket() {
 
             case 'error':
                 clearPendingCells();
-            if (data.message === "Ce n'est pas votre tour de jouer.") {
+                if (!loginModal.classList.contains('hidden')) {
+                    loginError.textContent = data.message || 'Une erreur est survenue pendant la connexion.';
+                }
+                if (data.message === "Ce n'est pas votre tour de jouer.") {
                     showNotYourTurnPopup();
                 }
                 logMessage('Erreur: ' + data.message);
@@ -376,12 +384,14 @@ function connectWebSocket() {
 
     // Gestion de la fermeture ou de l'erreur de connexion WebSocket
     socket.onerror = function() {
+        clearPendingCells();
         setConnectionStatus('Connexion interrompue', false);
         logMessage('Impossible de se connecter au serveur WebSocket.');
         showConnectionError();
     };
 
     socket.onclose = function() {
+        clearPendingCells();
         if (logoutInProgress) {
             logoutInProgress = false;
             handleLogoutSuccess();
@@ -598,7 +608,10 @@ function displayGameBoard(board, losingCell = null) {
             // Si la cellule est révélée
             if (cell.revealed) {
                 td.classList.add('revealed');
-                if (cell.mine) {
+                if (cell.flagged) {
+                    renderRevealedFlag(cellBack, cell.flaggedBy, Boolean(cell.incorrectFlag));
+                    if (cell.incorrectFlag) td.classList.add('incorrect-flag');
+                } else if (cell.mine) {
                     soundMine.play();
                     cellBack.textContent = '💣'; // Afficher la mine
 
@@ -617,10 +630,10 @@ function displayGameBoard(board, losingCell = null) {
                 // Si la cellule est marquée par un drapeau
                 if (cell.flagged) {
                     td.classList.add('cell-flagged'); // Ajouter la classe pour les drapeaux
-                    cellFront.textContent = '🚩'; // Afficher le drapeau
+                    renderPlayerFlag(cellFront, cell.flaggedBy);
                 }
             }
-            td.dataset.state = `${Number(Boolean(cell.revealed))}:${Number(Boolean(cell.flagged))}:${cell.adjacentMines ?? ''}`;
+            td.dataset.state = `${Number(Boolean(cell.revealed))}:${Number(Boolean(cell.flagged))}:${cell.flaggedBy ?? ''}:${cell.adjacentMines ?? ''}`;
 
             cellInner.appendChild(cellFront);
             cellInner.appendChild(cellBack);
@@ -628,7 +641,7 @@ function displayGameBoard(board, losingCell = null) {
 
             // Gestion des clics (révélation des cases)
             td.addEventListener('click', () => {
-                if (mobileGameQuery.matches && touchActionMode === 'flag') {
+                if (td.classList.contains('cell-flagged') || (mobileGameQuery.matches && touchActionMode === 'flag')) {
                     placeFlag(x, y);
                 } else {
                     revealCell(x, y, td);
@@ -640,7 +653,11 @@ function displayGameBoard(board, losingCell = null) {
             td.addEventListener('keydown', (event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
-                    revealCell(x, y, td);
+                    if (td.classList.contains('cell-flagged')) {
+                        placeFlag(x, y);
+                    } else {
+                        revealCell(x, y, td);
+                    }
                 } else if (event.key.toLowerCase() === 'f') {
                     event.preventDefault();
                     placeFlag(x, y);
@@ -657,6 +674,64 @@ function displayGameBoard(board, losingCell = null) {
         table.appendChild(tr);
     });
     gameBoardDiv.appendChild(table);
+}
+
+function renderPlayerFlag(container, owner) {
+    container.textContent = '';
+    const flag = document.createElement('span');
+    const playerSlot = Number(owner) === 2 ? 2 : 1;
+    flag.className = `player-flag flag-player-${playerSlot}`;
+    flag.setAttribute('aria-hidden', 'true');
+    const cloth = document.createElement('span');
+    cloth.className = 'player-flag-cloth';
+    flag.appendChild(cloth);
+    container.appendChild(flag);
+}
+
+function renderRevealedFlag(container, owner, incorrect) {
+    renderPlayerFlag(container, owner);
+    if (!incorrect) return;
+    const cross = document.createElement('span');
+    cross.className = 'incorrect-flag-cross';
+    cross.textContent = '×';
+    cross.setAttribute('aria-hidden', 'true');
+    container.appendChild(cross);
+}
+
+function pendingCellKey(cell) {
+    return `${cell.dataset.x}:${cell.dataset.y}`;
+}
+
+function beginPendingAction(cell, action) {
+    if (!cell || cell.classList.contains('pending-action')) return false;
+    cell.classList.add('pending-action', `pending-${action}`);
+    cell.setAttribute('aria-busy', 'true');
+    const key = pendingCellKey(cell);
+    const timer = setTimeout(() => {
+        if (!cell.classList.contains('pending-action')) return;
+        cell.classList.add('pending-delayed');
+        document.getElementById('gameBoard').classList.add('action-delayed');
+    }, 1800);
+    pendingActionTimers.set(key, timer);
+    return true;
+}
+
+function finishPendingAction(cell, rollback = false) {
+    if (!cell?.classList.contains('pending-action')) return;
+    const key = pendingCellKey(cell);
+    clearTimeout(pendingActionTimers.get(key));
+    pendingActionTimers.delete(key);
+    if (rollback && cell.classList.contains('pending-flag-add')) {
+        cell.querySelector('.cell-front').textContent = '';
+    }
+    cell.classList.remove(
+        'pending-action', 'pending-reveal', 'pending-flag-add',
+        'pending-flag-remove', 'pending-delayed'
+    );
+    cell.removeAttribute('aria-busy');
+    if (!document.querySelector('#gameBoard .pending-delayed')) {
+        document.getElementById('gameBoard').classList.remove('action-delayed');
+    }
 }
 
 function setTouchActionMode(mode) {
@@ -688,18 +763,19 @@ function updateGameBoard(board) {
     board.forEach((row, x) => {
         row.forEach((cell, y) => {
             const td = table.rows[x].cells[y];
-            const state = `${Number(Boolean(cell.revealed))}:${Number(Boolean(cell.flagged))}:${cell.adjacentMines ?? ''}`;
+            const state = `${Number(Boolean(cell.revealed))}:${Number(Boolean(cell.flagged))}:${cell.flaggedBy ?? ''}:${cell.adjacentMines ?? ''}`;
             if (td.dataset.state === state) {
-                td.classList.remove('pending-reveal');
+                finishPendingAction(td);
                 return;
             }
             const front = td.querySelector('.cell-front');
             const back = td.querySelector('.cell-back');
 
-            td.classList.remove('pending-reveal');
+            finishPendingAction(td);
             td.classList.toggle('revealed', Boolean(cell.revealed));
             td.classList.toggle('cell-flagged', !cell.revealed && Boolean(cell.flagged));
-            front.textContent = !cell.revealed && cell.flagged ? '🚩' : '';
+            front.textContent = '';
+            if (!cell.revealed && cell.flagged) renderPlayerFlag(front, cell.flaggedBy);
             back.textContent = '';
             for (let number = 1; number <= 8; number++) {
                 back.classList.remove(`mine-number-${number}`);
@@ -711,23 +787,28 @@ function updateGameBoard(board) {
             td.dataset.state = state;
             const description = cell.revealed
                 ? (cell.adjacentMines > 0 ? `${cell.adjacentMines} mine(s) à proximité` : 'Case vide révélée')
-                : (cell.flagged ? 'Case marquée par un drapeau' : 'Case masquée');
+                : (cell.flagged ? `Case marquée par le joueur ${Number(cell.flaggedBy) === 2 ? 2 : 1}` : 'Case masquée');
             td.setAttribute('aria-label', `Case ligne ${x + 1}, colonne ${y + 1} : ${description}`);
         });
     });
 }
 
 function clearPendingCells() {
-    document.querySelectorAll('#gameBoard .pending-reveal').forEach(cell => {
-        cell.classList.remove('pending-reveal');
-    });
+    document.querySelectorAll('#gameBoard .pending-action').forEach(cell => finishPendingAction(cell, true));
 }
 
 function updateGameStatus(board, mineCount, currentPlayer) {
     isMyTurn = currentPlayer === username;
-    const flags = board.reduce((total, row) => total + row.filter(cell => cell.flagged).length, 0);
-    document.getElementById('mineCounter').textContent = `💣 ${Number(mineCount) || 0}`;
-    document.getElementById('flagCounter').textContent = `🚩 ${flags}`;
+    const flags = board.reduce((counts, row) => {
+        row.forEach(cell => {
+            if (!cell.flagged) return;
+            counts[Number(cell.flaggedBy) === 2 ? 2 : 1]++;
+        });
+        return counts;
+    }, { 1: 0, 2: 0 });
+    document.getElementById('mineCounter').textContent = Number(mineCount) || 0;
+    document.getElementById('flagCounterPlayer1').textContent = flags[1];
+    document.getElementById('flagCounterPlayer2').textContent = flags[2];
     const gameBoard = document.getElementById('gameBoard');
     gameBoard.classList.toggle('waiting-turn', !isMyTurn);
     gameBoard.setAttribute('aria-disabled', isMyTurn ? 'false' : 'true');
@@ -774,12 +855,12 @@ function revealCell(x, y, cellElement = null) {
         return;
     }
     if (currentGameId && socket.readyState === WebSocket.OPEN) {
-        if (cellElement?.classList.contains('pending-reveal') ||
+        if (cellElement?.classList.contains('pending-action') ||
             cellElement?.classList.contains('revealed') ||
             cellElement?.classList.contains('cell-flagged')) {
             return;
         }
-        cellElement?.classList.add('pending-reveal');
+        if (!beginPendingAction(cellElement, 'reveal')) return;
         socket.send(JSON.stringify({
             type: 'reveal_cell',
             game_id: currentGameId,  // Utilisez le game_id stocké
@@ -798,7 +879,14 @@ function placeFlag(x, y) {
         showNotYourTurnPopup();
         return;
     }
-    if (currentGameId) {  // Vérifiez que le game_id est bien défini
+    if (currentGameId && socket.readyState === WebSocket.OPEN) {
+        const cellElement = document.querySelector(`#gameBoard .cell[data-x="${x}"][data-y="${y}"]`);
+        if (!cellElement || cellElement.classList.contains('pending-action') || cellElement.classList.contains('revealed')) return;
+        const removing = cellElement.classList.contains('cell-flagged');
+        if (!beginPendingAction(cellElement, removing ? 'flag-remove' : 'flag-add')) return;
+        if (!removing) {
+            renderPlayerFlag(cellElement.querySelector('.cell-front'), 1);
+        }
         socket.send(JSON.stringify({
             type: 'place_flag',
             game_id: currentGameId,  // Utilisez le game_id stocké
@@ -813,21 +901,45 @@ function placeFlag(x, y) {
 }
 
 // Afficher le modal du gagnant
-function showWinnerModal(winnerMessage, gameId) {
+function showWinnerModal(winnerMessage, gameId, flagScores = []) {
     currentGameId = gameId;
     const modal = document.getElementById('winnerModal');
     const message = document.getElementById('winnerMessage');
     message.textContent = winnerMessage;
+    const scores = document.getElementById('winnerFlagScores');
+    scores.textContent = '';
+    if (Array.isArray(flagScores)) {
+        flagScores.forEach(player => {
+            const line = document.createElement('p');
+            line.className = `winner-flag-score flag-player-${Number(player.playerSlot) === 2 ? 2 : 1}`;
+            line.textContent = `${player.username} : ${player.score} point${Math.abs(player.score) > 1 ? 's' : ''} (${player.correctFlags} correct${player.correctFlags > 1 ? 's' : ''}, ${player.incorrectFlags} incorrect${player.incorrectFlags > 1 ? 's' : ''})`;
+            scores.appendChild(line);
+        });
+    }
     setElementDisplay(modal, 'flex');
     
 }
 
 async function sendLogin(username, password) {
+    if (!username.trim() || !password) {
+        loginError.textContent = 'Saisissez votre nom d\'utilisateur et votre mot de passe.';
+        return false;
+    }
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        loginError.textContent = 'Connexion au serveur indisponible. Veuillez patienter quelques secondes puis réessayer.';
+        setConnectionStatus('Connexion indisponible', false);
+        if (!isReconnecting) attemptReconnect();
+        return false;
+    }
+
+    loginError.textContent = '';
     socket.send(JSON.stringify({
         type: 'login',
-        username: username,
+        username: username.trim(),
         password: password
     }));
+    return true;
 }
 
 async function sendRegister(username, email, password) {
@@ -853,11 +965,13 @@ document.getElementById('closeModalBtn').addEventListener('click', () => {
     setGameActive(false);
 });
 
-loginBtn.addEventListener('click', async () => {
+loginForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
     const username = document.getElementById('loginUsername').value;
     const password = document.getElementById('loginPassword').value;
-    await sendLogin(username, password); // Fonction existante pour envoyer les infos de login
-    console.log('Tentative de connexion pour ' + username);
+    if (await sendLogin(username, password)) {
+        console.log('Tentative de connexion pour ' + username.trim());
+    }
 });
 
 // Gestion de la création de compte

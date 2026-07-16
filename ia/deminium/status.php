@@ -30,6 +30,9 @@ foreach ($iaList as $iaPath) {
         $contents = (string) file_get_contents($logFile);
         $lastLog = mb_substr($contents, -4000);
     }
+    $stateFile = dirname($logFile) . '/state.json';
+    $runtimeState = is_readable($stateFile) ? json_decode((string) file_get_contents($stateFile), true) : null;
+    $inGame = $running && is_array($runtimeState) && !empty($runtimeState['inGame']);
     $memory = ['games' => 0, 'wins' => 0, 'losses' => 0, 'draws' => 0, 'moves' => 0, 'decision_ms_total' => 0, 'decision_errors' => 0];
     $memoryFile = $iaPath . '/memory.json';
     if (is_readable($memoryFile) && filesize($memoryFile) <= 65536) {
@@ -43,6 +46,7 @@ foreach ($iaList as $iaPath) {
         'running' => $running,
         'pid' => ctype_digit($pid) ? (int) $pid : null,
         'managedBySystemd' => $serviceRunning,
+        'inGame' => $inGame,
         'lastLog' => $lastLog,
         'config' => read_ai_config($iaName),
         'stats' => $memory + [

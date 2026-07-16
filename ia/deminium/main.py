@@ -22,6 +22,7 @@ current_invitation_id = None
 invited_player_id = None
 stop_ai = False
 consecutive_move_errors = 0
+move_pending = False
 
 # Configuration par défaut
 pause_duration = 700  # En millisecondes
@@ -77,6 +78,25 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+runtime_state_path = os.path.join(log_dir, 'state.json')
+
+def write_runtime_state(game_id=None):
+    state = {
+        'inGame': bool(game_id),
+        'gameId': game_id,
+        'level': selected_level,
+        'updatedAt': int(time.time()),
+    }
+    temporary = runtime_state_path + '.tmp'
+    try:
+        with open(temporary, 'w', encoding='utf-8') as state_file:
+            json.dump(state, state_file, ensure_ascii=False, separators=(',', ':'))
+        os.replace(temporary, runtime_state_path)
+    except OSError as exc:
+        logging.warning('État IA non enregistrable : %s', exc)
+
+write_runtime_state()
 
 # Exemple de log pour différentes étapes
 logging.info('Début du script IA')
@@ -215,13 +235,19 @@ async def attempt_login(websocket):
     if data['type'] == 'login_success':
         print(f"Connecté avec succès en tant que {username}")
         current_player_id = data['playerId']
-        await handle_server_messages(websocket, username)
+        command_task = asyncio.create_task(watch_admin_commands(websocket))
+        try:
+            await handle_server_messages(websocket, username)
+        finally:
+            command_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await command_task
     elif data['type'] == 'login_failed':
         print(f"Échec de connexion pour {username}.")
         sys.exit(1)
 
 async def handle_server_messages(websocket, username):
-    global current_game_id, current_invitation_id, invited_player_id
+    global current_game_id, current_invitation_id, invited_player_id, move_pending
 
     async for message in websocket:
         data = json.loads(message)
@@ -245,8 +271,8 @@ async def handle_server_messages(websocket, username):
             else:
                 await decline_invite(websocket)
 
-        elif data['type'] == 'game_start':
-            print("Partie commencée !")
+        elif data['type'] in ('game_start', 'game_resumed'):
+            print("Partie commencée !" if data['type'] == 'game_start' else "Partie reprise !")
             try:
                 move_strategy.beginGame(data['board'], data.get('mineCount'))
             except TypeError:
@@ -256,6 +282,7 @@ async def handle_server_messages(websocket, username):
             if isinstance(data.get('mineCount'), int):
                 move_strategy.total_mines = data['mineCount']
             current_game_id = data['game_id']
+            write_runtime_state(current_game_id)
             display_board(data['board'])
 
             if data['currentPlayer'] == username:
@@ -265,6 +292,7 @@ async def handle_server_messages(websocket, username):
                 print("En attente de mon tour...")
 
         elif data['type'] == 'update_board':
+            move_pending = False
             display_board(data['board'])
             if data['currentPlayer'] == username:
                 print("C'est mon tour !")
@@ -272,8 +300,16 @@ async def handle_server_messages(websocket, username):
             else:
                 print("En attente de mon tour...")
 
+        elif data['type'] == 'game_state':
+            move_pending = False
+            board = data.get('state', {}).get('board')
+            if board and data.get('currentPlayer') == username:
+                print("État de la partie resynchronisé, nouveau calcul du coup.")
+                await make_move(websocket, board)
+
         elif data['type'] == 'game_over':
             current_game_id = None
+            write_runtime_state()
             print(f"Partie terminée. Vainqueur : {data['winner_name']}")
             display_board(data['board'])
 
@@ -283,12 +319,45 @@ async def handle_server_messages(websocket, username):
             if invite_automatically and rematch and invited_player_id is not None:
                 await invite_player(websocket, invited_player_id)
 
+        elif data['type'] == 'game_cancelled':
+            current_game_id = None
+            write_runtime_state()
+            print(data.get('message', 'Partie quittée.'))
+
         elif data['type'] == 'connected_players':
             if invite_automatically:
                 await search_and_invite_player(websocket, data['players'], username)
 
         elif data['type'] == 'error':
             print(f"Erreur : {data['message']}")
+            # Un coup refusé ne produit pas d'update_board. Redemander l'état
+            # évite que l'IA attende indéfiniment alors que c'est toujours son tour.
+            if current_game_id and move_pending:
+                move_pending = False
+                await websocket.send(json.dumps({
+                    'type': 'get_game_state',
+                    'gameId': current_game_id,
+                }))
+
+async def watch_admin_commands(websocket):
+    global current_game_id
+    control_file = os.path.join(log_dir, 'leave.request')
+    while not stop_ai:
+        if os.path.isfile(control_file):
+            with contextlib.suppress(OSError):
+                os.remove(control_file)
+            game_to_leave = current_game_id
+            if game_to_leave:
+                current_game_id = None
+                write_runtime_state()
+                await websocket.send(json.dumps({
+                    'type': 'quit_game',
+                    'game_id': game_to_leave,
+                }))
+                logging.info('Demande administrateur : abandon de la partie %s.', game_to_leave)
+            else:
+                logging.info('Demande administrateur ignorée : aucune partie active.')
+        await asyncio.sleep(0.5)
 
 async def accept_invite(websocket):
     accept_message = {
@@ -332,7 +401,7 @@ async def invite_player(websocket, player_id):
     await websocket.send(json.dumps(invite_message))
 
 async def make_move(websocket, board):
-    global pause_duration, consecutive_move_errors
+    global pause_duration, consecutive_move_errors, move_pending
 
     # Utilisation de la stratégie de mouvement pour choisir le coup
     available = [
@@ -395,12 +464,15 @@ async def make_move(websocket, board):
     action = best_move.get('action', 'reveal')
     if action == 'flag' and not use_flags:
         action = 'reveal'
+    if current_game_id is None:
+        return
     move_message = {
         'type': 'place_flag' if action == 'flag' else 'reveal_cell',
         'game_id': current_game_id,
         'x': int(x),  # Conversion en int natif
         'y': int(y)   # Conversion en int natif
     }
+    move_pending = True
     await websocket.send(json.dumps(move_message))
 
 def display_board(board):

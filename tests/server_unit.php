@@ -25,4 +25,10 @@ foreach ($masked as $row) foreach ($row as $cell) {
     assert_true(!array_key_exists('adjacentMines', $cell), 'Un indice caché a fui');
 }
 
+$ownedFlagBoard = $board;
+$ownedFlagBoard[0][0]['flagged'] = true;
+$ownedFlagBoard[0][0]['flaggedBy'] = 2;
+$maskedFlag = $mask->invoke($server, $ownedFlagBoard);
+assert_true($maskedFlag[0][0]['flagged'] === true && $maskedFlag[0][0]['flaggedBy'] === 2, 'Le propriétaire du drapeau doit être transmis sans révéler la mine.');
+
 echo "Tests serveur réussis.\n";

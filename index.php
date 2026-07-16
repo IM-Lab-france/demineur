@@ -86,13 +86,15 @@ if (!is_dir(__DIR__ . '/vendor')) {
         <div class="modal-content">
             <img src="img/demineur.png" alt="Logo du Démineur">
             <p>Connectez-vous pour rejoindre l'aventure.</p>
-            <div class="form-group">
-                <input type="text" id="loginUsername" class="form-control" placeholder="Nom d'utilisateur" autocomplete="username">
-            </div>
-            <div class="form-group">
-                <input type="password" id="loginPassword" class="form-control" placeholder="Mot de passe" autocomplete="current-password">
-            </div>
-            <button id="loginBtn" class="btn btn-primary">Connexion</button>
+            <form id="loginForm">
+                <div class="form-group">
+                    <input type="text" id="loginUsername" class="form-control" placeholder="Nom d'utilisateur" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <input type="password" id="loginPassword" class="form-control" placeholder="Mot de passe" autocomplete="current-password" required>
+                </div>
+                <button id="loginBtn" type="submit" class="btn btn-primary">Connexion</button>
+            </form>
             <p>Pas encore de compte ? <a href="#" id="showRegisterModal">Créez-en un ici !</a></p>
             <p><a href="/forgot-password.php">Mot de passe oublié ?</a></p>
             <p id="loginError" class="text-danger"></p>
@@ -141,8 +143,26 @@ if (!is_dir(__DIR__ . '/vendor')) {
         <!-- Plateau de jeu -->
         <div id="gameContainer">
             <div id="gameStatus" aria-live="polite">
-                <div id="currentTurnDisplay"></div>
-                <div id="gameCounters"><span id="mineCounter">💣 0</span><span id="flagCounter">🚩 0</span></div>
+                <div id="currentTurnDisplay">
+                    <div id="currentTurnText"></div>
+                    <div id="gameCounters">
+                        <span class="game-counter mine-counter" aria-label="Nombre total de mines">
+                            <span class="counter-icon" aria-hidden="true">💣</span>
+                            <span class="counter-label">Mines</span>
+                            <strong id="mineCounter">0</strong>
+                        </span>
+                        <span class="game-counter flag-counter flag-player-1" aria-label="Drapeaux rouges du joueur 1">
+                            <span class="counter-icon" aria-hidden="true">⚑</span>
+                            <span class="counter-label">Rouges</span>
+                            <strong id="flagCounterPlayer1">0</strong>
+                        </span>
+                        <span class="game-counter flag-counter flag-player-2" aria-label="Drapeaux bleus du joueur 2">
+                            <span class="counter-icon" aria-hidden="true">⚑</span>
+                            <span class="counter-label">Bleus</span>
+                            <strong id="flagCounterPlayer2">0</strong>
+                        </span>
+                    </div>
+                </div>
             </div>
             <div id="plateau">
                 <div id="gameBoard"></div> <!-- Plateau de jeu -->
@@ -158,6 +178,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
     <div id="winnerModal">
         <div id="winnerModalContent">
             <h2 id="winnerMessage"></h2>
+            <div id="winnerFlagScores" aria-live="polite"></div>
             <button id="closeModalBtn" class="btn btn-primary">Fermer</button>
         </div>
     </div>

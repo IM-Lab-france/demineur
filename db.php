@@ -1,6 +1,10 @@
 <?php
 class Database {
     private $pdo;
+    private string $dsn;
+    private string $username;
+    private string $password;
+    private int $generation = 0;
 
     private function getRequiredConfig(string $name): string {
         $value = $_ENV[$name] ?? getenv($name);
@@ -33,20 +37,52 @@ class Database {
             throw new RuntimeException('Variable de configuration manquante: DB_PASS');
         }
 
-        $dsn = 'mysql:host=' . $host . ';dbname=' . $database . ';charset=utf8mb4';
-        $this->pdo = new PDO($dsn, $username, $password, [
+        $this->dsn = 'mysql:host=' . $host . ';dbname=' . $database . ';charset=utf8mb4';
+        $this->username = $username;
+        $this->password = $password;
+        $this->connect();
+    }
+
+    private function connect(): void {
+        $this->pdo = new PDO($this->dsn, $this->username, $this->password, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
         ]);
+        $this->generation++;
+    }
+
+    private function isLostConnection(PDOException $e): bool {
+        return (int) ($e->errorInfo[1] ?? 0) === 2006
+            || (int) ($e->errorInfo[1] ?? 0) === 2013
+            || str_contains(strtolower($e->getMessage()), 'server has gone away')
+            || str_contains(strtolower($e->getMessage()), 'lost connection');
+    }
+
+    public function reconnectIfNeeded(): bool {
+        $generation = $this->generation;
+        try {
+            $this->pdo->query('SELECT 1');
+        } catch (PDOException $e) {
+            if (!$this->isLostConnection($e)) throw $e;
+            $this->connect();
+        }
+        return $this->generation !== $generation;
     }
 
     // Fonction pour récupérer un utilisateur par son nom d'utilisateur
     public function getUserByUsername($username) {
-        $stmt = $this->pdo->prepare('SELECT * FROM users WHERE username = :username');
-        $stmt->bindParam(':username', $username);
-        $stmt->execute();
-        return $stmt->fetch(PDO::FETCH_ASSOC); // Retourne un tableau associatif contenant les infos de l'utilisateur
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            try {
+                $stmt = $this->pdo->prepare('SELECT * FROM users WHERE username = :username');
+                $stmt->execute(['username' => $username]);
+                return $stmt->fetch(PDO::FETCH_ASSOC);
+            } catch (PDOException $e) {
+                if ($attempt > 0 || !$this->isLostConnection($e)) throw $e;
+                $this->connect();
+            }
+        }
+        return false;
     }
 
     // Nouvelle méthode pour obtenir l'instance PDO

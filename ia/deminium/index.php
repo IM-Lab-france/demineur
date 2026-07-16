@@ -64,6 +64,11 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                     $initialServiceOutput = [];
                     exec('/usr/bin/systemctl is-active --quiet ' . escapeshellarg('minesweeper-ai@' . $iaName . '.service'), $initialServiceOutput, $initialServiceCode);
                     $running = $running || $initialServiceCode === 0;
+                    $initialStateFile = (is_readable('/var/log/minesweeper/ai/' . $iaName . '/state.json')
+                        ? '/var/log/minesweeper/ai/' . $iaName . '/state.json'
+                        : "$iaPath/logs/state.json");
+                    $initialRuntimeState = is_readable($initialStateFile) ? json_decode((string) file_get_contents($initialStateFile), true) : null;
+                    $inGame = $running && is_array($initialRuntimeState) && !empty($initialRuntimeState['inGame']);
                     $config = read_ai_config($iaName);
                     $memory = ['games' => 0, 'wins' => 0, 'losses' => 0, 'draws' => 0, 'moves' => 0, 'decision_ms_total' => 0, 'decision_errors' => 0];
                     $memoryPath = "$iaPath/memory.json";
@@ -160,6 +165,7 @@ $iaList = array_filter(glob($pluginsDir . '/*'), function($dir) {
                                     <?= !$running ? 'disabled' : '' ?>>
                                 Arrêter
                             </button>
+                            <button class="btn btn-warning leave-game-btn" data-ia="<?= $safeIaName ?>" <?= !$inGame ? 'disabled' : '' ?>>Quitter la partie</button>
                         </footer>
                     </section>
                 <?php endforeach; ?>

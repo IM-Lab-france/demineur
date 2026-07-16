@@ -26,6 +26,20 @@ outcome_assert($winner === 20 && $name === 'Bob', 'Une explosion doit faire gagn
 [$winner, $name] = $outcome->invoke($server, $game, null, true, null);
 outcome_assert($winner === null && $name === 'Egalité', 'Un plateau sécurisé doit produire une égalité.');
 
+$calculateFlagScores = $reflection->getMethod('calculateFlagScores');
+$calculateFlagScores->setAccessible(true);
+$scoredGame = ['players' => [10, 20], 'board' => [[
+    ['mine' => true, 'flagged' => true, 'flaggedBy' => 1],
+    ['mine' => false, 'flagged' => true, 'flaggedBy' => 1],
+    ['mine' => false, 'flagged' => true, 'flaggedBy' => 2],
+]]];
+$scoreArguments = [&$scoredGame];
+$flagScores = $calculateFlagScores->invokeArgs($server, $scoreArguments);
+outcome_assert($flagScores[0]['score'] === 0, 'Un bon et un mauvais drapeau doivent produire un score nul.');
+outcome_assert($flagScores[1]['score'] === -1, 'Un mauvais drapeau doit retirer un point à son propriétaire.');
+outcome_assert($scoredGame['board'][0][1]['incorrectFlag'] === true, 'Un mauvais drapeau doit être marqué pour la révélation finale.');
+outcome_assert($scoredGame['board'][0][0]['incorrectFlag'] === false, 'Un drapeau correctement placé ne doit pas être barré.');
+
 $gamesProperty = $reflection->getProperty('games');
 $allSafe = $reflection->getMethod('allSafeCellsRevealed');
 $allSafe->setAccessible(true);
@@ -139,5 +153,74 @@ outcome_assert($transferredGames['transfer']['players'] === [30, 20], 'La partie
 outcome_assert($transferredGames['transfer']['currentTurn'] === 30, 'Le tour courant doit être transféré.');
 outcome_assert($transferredInvitations['pending']['invitee'] === 30, 'Les invitations en attente doivent suivre la nouvelle connexion.');
 outcome_assert(!isset($transferredSessions[str_repeat('a', 64)]), 'L’ancien jeton de session doit être révoqué.');
+
+class QuitTestConnection implements \Ratchet\ConnectionInterface {
+    public array $messages = [];
+    public function __construct(public int $resourceId) {}
+    public function send($data) { $this->messages[] = json_decode((string) $data, true); return $this; }
+    public function close() {}
+}
+
+class QuitTestServer extends MinesweeperServer {
+    public bool $cancelled = false;
+    public function __construct(QuitTestConnection $quitter, QuitTestConnection $opponent) {
+        $this->clients = new SplObjectStorage();
+        $this->clients->attach($quitter); $this->clients->attach($opponent);
+        $this->players = [
+            10 => ['id' => 1, 'username' => 'IA'],
+            20 => ['id' => 2, 'username' => 'Bob'],
+        ];
+        $this->sessionValidationTimes = [10 => time(), 20 => time()];
+        $this->games = ['quit' => ['players' => [10, 20]]];
+        $this->logger = new class { public function info(...$arguments): void {} };
+    }
+    protected function cancelGameAfterDisconnect($gameId, $disconnectedPlayerId, $otherPlayerId): void {
+        $this->cancelled = true;
+        unset($this->games[$gameId]);
+    }
+    protected function broadcastConnectedPlayersList(int $sourceConnectionId): void {}
+    public function quit(QuitTestConnection $connection): void {
+        $this->handleQuitGame($connection, ['game_id' => 'quit']);
+    }
+}
+
+$quitter = new QuitTestConnection(10);
+$opponent = new QuitTestConnection(20);
+$quitServer = new QuitTestServer($quitter, $opponent);
+$quitServer->quit($quitter);
+outcome_assert($quitServer->cancelled, 'Quitter doit annuler proprement la partie.');
+outcome_assert(($quitter->messages[0]['type'] ?? null) === 'game_cancelled', 'L’IA doit recevoir la confirmation de sortie.');
+outcome_assert(($opponent->messages[0]['type'] ?? null) === 'player_disconnected', 'L’adversaire doit être averti du départ volontaire.');
+
+class UnlimitedFlagTestServer extends MinesweeperServer {
+    public function __construct(QuitTestConnection $player, QuitTestConnection $opponent) {
+        $this->clients = new SplObjectStorage();
+        $this->clients->attach($player); $this->clients->attach($opponent);
+        $this->players = [
+            10 => ['id' => 1, 'username' => 'Alice'],
+            20 => ['id' => 2, 'username' => 'Bob'],
+        ];
+        $this->games = ['flags' => [
+            'players' => [10, 20], 'spectators' => [], 'currentTurn' => 10,
+            'mineCount' => 1, 'moves' => 0,
+            'board' => [[
+                ['mine' => true, 'revealed' => false, 'flagged' => true, 'flaggedBy' => 1, 'adjacentMines' => 0],
+                ['mine' => false, 'revealed' => false, 'flagged' => false, 'flaggedBy' => null, 'adjacentMines' => 1],
+            ]],
+        ]];
+        $this->logger = new class { public function info(...$arguments): void {} };
+    }
+    protected function getValidatedGameAction(\Ratchet\ConnectionInterface $from, array $data, $requireTurn = true) { return ['flags', 0, 1]; }
+    protected function persistGame(string $gameId): void {}
+    protected function updateSpectators($gameId, ?array $maskedBoard = null): void {}
+    public function addExtraFlag(QuitTestConnection $player): void { $this->handlePlaceFlag($player, []); }
+    public function board(): array { return $this->games['flags']['board']; }
+}
+
+$flagPlayer = new QuitTestConnection(10);
+$flagOpponent = new QuitTestConnection(20);
+$unlimitedFlagServer = new UnlimitedFlagTestServer($flagPlayer, $flagOpponent);
+$unlimitedFlagServer->addExtraFlag($flagPlayer);
+outcome_assert($unlimitedFlagServer->board()[0][1]['flagged'] === true, 'Un joueur doit pouvoir dépasser le nombre de mines en drapeaux.');
 
 echo "Tests des règles de fin de partie réussis.\n";

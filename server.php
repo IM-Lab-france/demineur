@@ -180,6 +180,20 @@ class MinesweeperServer implements MessageComponentInterface {
             return;
         }
 
+        // Le processus WebSocket vit plus longtemps que le délai d'inactivité
+        // MySQL. Renouveler aussi les objets qui conservaient l'ancien PDO.
+        try {
+            if ($this->db->reconnectIfNeeded()) {
+                $this->authSessionRepository = new AuthSessionRepository($this->db->getPDO());
+                $this->recordMoveStatement = null;
+                $this->logger->info('Connexion MySQL rétablie après expiration.');
+            }
+        } catch (Throwable $e) {
+            $this->logger->error('Base de données indisponible.', ['error' => $e->getMessage()]);
+            $this->sendError($from, 'Base de données temporairement indisponible.');
+            return;
+        }
+
         // Ne jamais écrire les identifiants reçus dans les journaux.
         $loggedData = $data;
         unset($loggedData['password']);
@@ -230,6 +244,10 @@ class MinesweeperServer implements MessageComponentInterface {
 
             case 'place_flag':
                 $this->handlePlaceFlag($from, $data);
+                break;
+
+            case 'quit_game':
+                $this->handleQuitGame($from, $data);
                 break;
 
             case 'ready_for_new_game':
@@ -1519,13 +1537,15 @@ class MinesweeperServer implements MessageComponentInterface {
                     $maskedRow[] = [
                         'revealed' => true,
                         'flagged' => $cell['flagged'],
+                        'flaggedBy' => $cell['flaggedBy'] ?? null,
                         'adjacentMines' => $cell['adjacentMines']
                     ];
                 } else {
                     // Si la cellule n'est pas révélée, on n'envoie que l'état 'flagged' et 'revealed'
                     $maskedRow[] = [
                         'revealed' => false,
-                        'flagged' => $cell['flagged']
+                        'flagged' => $cell['flagged'],
+                        'flaggedBy' => $cell['flaggedBy'] ?? null
                         // Pas de 'adjacentMines' envoyé ici
                     ];
                 }
@@ -1544,22 +1564,14 @@ class MinesweeperServer implements MessageComponentInterface {
             return;
         }
 
-        if (!$this->games[$gameId]['board'][$x][$y]['flagged']) {
-            $flagCount = 0;
-            $mineCount = 0;
-            foreach ($this->games[$gameId]['board'] as $row) {
-                foreach ($row as $cell) {
-                    if ($cell['flagged']) $flagCount++;
-                    if ($cell['mine']) $mineCount++;
-                }
-            }
-            if ($flagCount >= $mineCount) {
-                $this->sendError($from, 'Tous les drapeaux disponibles sont déjà placés.');
-                return;
-            }
+        $placingFlag = !$this->games[$gameId]['board'][$x][$y]['flagged'];
+        $this->games[$gameId]['board'][$x][$y]['flagged'] = $placingFlag;
+        if ($placingFlag) {
+            $playerSlot = array_search($from->resourceId, $this->games[$gameId]['players'], true);
+            $this->games[$gameId]['board'][$x][$y]['flaggedBy'] = $playerSlot === false ? null : $playerSlot + 1;
+        } else {
+            $this->games[$gameId]['board'][$x][$y]['flaggedBy'] = null;
         }
-
-        $this->games[$gameId]['board'][$x][$y]['flagged'] = !$this->games[$gameId]['board'][$x][$y]['flagged'];
         $this->persistGame($gameId);
         $maskedBoard = $this->maskMinesForPlayer($this->games[$gameId]['board']);
 
@@ -1584,6 +1596,48 @@ class MinesweeperServer implements MessageComponentInterface {
             }
         }
         $this->updateSpectators($gameId, $maskedBoard);
+    }
+
+    protected function handleQuitGame(ConnectionInterface $from, array $data): void {
+        if (!$this->isAuthenticated($from)) {
+            $this->sendError($from, 'Authentification requise.');
+            return;
+        }
+        $requestedGameId = (string) ($data['game_id'] ?? '');
+        $gameId = null;
+        foreach ($this->games as $candidateId => $game) {
+            if (in_array($from->resourceId, $game['players'], true)
+                && ($requestedGameId === '' || (string) $candidateId === $requestedGameId)) {
+                $gameId = $candidateId;
+                break;
+            }
+        }
+        if ($gameId === null) {
+            $from->send(json_encode(['type' => 'game_cancelled', 'message' => 'Aucune partie active à quitter.']));
+            return;
+        }
+
+        $game = $this->games[$gameId];
+        $otherPlayerId = $game['players'][0] === $from->resourceId ? $game['players'][1] : $game['players'][0];
+        $from->send(json_encode([
+            'type' => 'game_cancelled',
+            'game_id' => $gameId,
+            'message' => 'Vous avez quitté la partie.',
+        ]));
+        $otherConnection = $this->getConnectionFromPlayerId($otherPlayerId);
+        if ($otherConnection) {
+            $otherConnection->send(json_encode([
+                'type' => 'player_disconnected',
+                'game_id' => $gameId,
+                'message' => 'Votre adversaire a quitté la partie. La partie est annulée.',
+            ]));
+        }
+        $this->cancelGameAfterDisconnect($gameId, $from->resourceId, $otherPlayerId);
+        $this->broadcastConnectedPlayersList($from->resourceId);
+        $this->logger->info('Partie quittée volontairement.', [
+            'game_id' => $gameId,
+            'player_connection_id' => $from->resourceId,
+        ]);
     }
 
     protected function handleReadyForNewGame(ConnectionInterface $from, $data) {
@@ -1648,6 +1702,7 @@ class MinesweeperServer implements MessageComponentInterface {
         
         $game = $this->games[$gameId];
         [$winnerId, $winnerName] = $this->determineGameOutcome($game, $loserId, $isDraw, $explicitWinnerId);
+        $flagScores = $this->calculateFlagScores($this->games[$gameId]);
         $this->handleGameOver($game ,$gameId,$winnerId, $isDraw, $losingCell);
         // Révéler toutes les cellules du plateau
         $this->revealAllCells($this->games[$gameId]['board']);
@@ -1663,6 +1718,7 @@ class MinesweeperServer implements MessageComponentInterface {
                     'winner' => $message,
                     'winner_name' => $winnerName,  // Envoi du nom du gagnant ou "Egalité"
                     'board' => $this->games[$gameId]['board'], // Envoyer le plateau complet révélé
+                    'flagScores' => $flagScores,
                     'losingCell' => $losingCell,
                     'players' => $this->getConnectedPlayers()
                 ]));
@@ -1680,6 +1736,7 @@ class MinesweeperServer implements MessageComponentInterface {
                         'winner_name' => $winnerName,
                         'message' => $isDraw ? 'La partie se termine par une égalité!' : "La partie est terminée ! Le vainqueur est $winnerName.",
                         'board' => $this->games[$gameId]['board'],  // Envoyer le plateau complet révélé
+                        'flagScores' => $flagScores,
                         'losingCell' => $losingCell
                     ]));
                 }
@@ -1705,6 +1762,37 @@ class MinesweeperServer implements MessageComponentInterface {
             }
         }
         throw new RuntimeException('Impossible de déterminer le résultat de la partie.');
+    }
+
+    protected function calculateFlagScores(array &$game): array {
+        $scores = [];
+        foreach ($game['players'] as $slot => $playerResourceId) {
+            $scores[$slot + 1] = [
+                'playerSlot' => $slot + 1,
+                'username' => $this->players[$playerResourceId]['username'],
+                'correctFlags' => 0,
+                'incorrectFlags' => 0,
+                'score' => 0,
+            ];
+        }
+        foreach ($game['board'] as &$row) {
+            foreach ($row as &$cell) {
+                $cell['incorrectFlag'] = false;
+                if (empty($cell['flagged'])) continue;
+                $owner = (int) ($cell['flaggedBy'] ?? 0);
+                if (!isset($scores[$owner])) continue;
+                if (!empty($cell['mine'])) {
+                    $scores[$owner]['correctFlags']++;
+                    $scores[$owner]['score']++;
+                } else {
+                    $cell['incorrectFlag'] = true;
+                    $scores[$owner]['incorrectFlags']++;
+                    $scores[$owner]['score']--;
+                }
+            }
+        }
+        unset($row, $cell);
+        return array_values($scores);
     }
 
     protected function revealAllCells(&$board) {
@@ -1992,7 +2080,8 @@ class MinesweeperServer implements MessageComponentInterface {
                     'mine' => false,
                     'revealed' => false,
                     'adjacentMines' => 0,
-                    'flagged' => false
+                    'flagged' => false,
+                    'flaggedBy' => null
                 ];
             }
         }

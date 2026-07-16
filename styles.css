@@ -116,16 +116,122 @@ body {
 }
 
 .flag-player-1 {
-    color: red; /* Couleur du drapeau pour le joueur 1 */
+    color: #e63946;
 }
 
 .flag-player-2 {
-    color: blue; /* Couleur du drapeau pour le joueur 2 */
+    color: #2878e8;
+}
+
+.player-flag {
+    position: relative;
+    display: inline-block;
+    width: 22px;
+    height: 23px;
+    vertical-align: middle;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .35));
+    transform-origin: 6px 21px;
+    animation: flagPoleSway 3.4s ease-in-out infinite;
+}
+
+.player-flag::before {
+    content: '';
+    position: absolute;
+    left: 1px;
+    bottom: 1px;
+    width: 12px;
+    height: 3px;
+    border-radius: 50%;
+    background: linear-gradient(to bottom, #667085, #273142);
+    box-shadow: inset 0 1px rgba(255, 255, 255, .35);
+}
+
+.player-flag::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 3px;
+    height: 20px;
+    border-radius: 2px;
+    background: linear-gradient(to right, #788397, #303949);
+    box-shadow: 0 -1px 0 1px #303949;
+}
+
+.player-flag-cloth {
+    position: absolute;
+    z-index: 1;
+    left: 7px;
+    top: 3px;
+    width: 14px;
+    height: 11px;
+    border-radius: 1px 3px 3px 1px;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, .45), transparent 42%),
+        currentColor;
+    clip-path: polygon(0 0, 47% 5%, 100% 0, 86% 48%, 100% 100%, 51% 92%, 0 100%);
+    transform-origin: left center;
+    animation: flagRipple 1.45s cubic-bezier(.45, .05, .55, .95) infinite;
+    box-shadow: inset 0 -2px rgba(0, 0, 0, .12);
+}
+
+.player-flag-cloth::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: -4px;
+    width: 5px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .48), transparent);
+    transform: skewX(-12deg);
+    animation: flagShimmer 2.9s ease-in-out infinite;
+}
+
+@keyframes flagPoleSway {
+    0%, 100% { transform: rotate(-.5deg); }
+    50% { transform: rotate(1deg); }
+}
+
+@keyframes flagRipple {
+    0%, 100% {
+        transform: perspective(30px) rotateY(-2deg) skewY(0deg) scaleX(1);
+        filter: brightness(1);
+    }
+    22% {
+        transform: perspective(30px) rotateY(-19deg) skewY(-2deg) scaleX(.94);
+        filter: brightness(1.1);
+    }
+    48% {
+        transform: perspective(30px) rotateY(7deg) skewY(1.5deg) scaleX(1.03);
+        filter: brightness(.97);
+    }
+    72% {
+        transform: perspective(30px) rotateY(-11deg) skewY(-1deg) scaleX(.98);
+        filter: brightness(1.04);
+    }
+}
+
+@keyframes flagShimmer {
+    0%, 28% { transform: translateX(0) skewX(-12deg); opacity: 0; }
+    45% { opacity: .8; }
+    62%, 100% { transform: translateX(18px) skewX(-12deg); opacity: 0; }
+}
+
+.cell-flagged:hover .player-flag-cloth,
+.cell-flagged:focus-visible .player-flag-cloth {
+    animation-duration: .68s;
+}
+
+.cell-flagged:hover .player-flag,
+.cell-flagged:focus-visible .player-flag {
+    animation-duration: 1.1s;
 }
 
 .cell-flagged .cell-front {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     animation: flagPlace 0.3s ease-in-out;
-    font-size: 18px;
 }
 
 @keyframes flagPlace {
@@ -199,8 +305,53 @@ td.revealed {
 #gameCounters {
     display: flex;
     justify-content: center;
-    gap: 18px;
-    margin-top: 8px;
+    gap: 7px;
+    margin: 0;
+}
+
+.game-counter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 68px;
+    padding: 6px 9px;
+    border: 1px solid rgba(255, 255, 255, .32);
+    border-radius: 9px;
+    color: #212529;
+    background: rgba(255, 255, 255, .96);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, .2);
+}
+
+.game-counter .counter-icon {
+    margin-right: 6px;
+    font-size: 1.15rem;
+    line-height: 1;
+}
+
+.game-counter .counter-label {
+    display: none;
+}
+
+.game-counter strong {
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.game-counter.flag-player-1 {
+    color: #c82333;
+    border-color: #e63946;
+    background: linear-gradient(145deg, #fff, #fff0f1);
+}
+
+.game-counter.flag-player-2 {
+    color: #1261c9;
+    border-color: #2878e8;
+    background: linear-gradient(145deg, #fff, #eef5ff);
+}
+
+.mine-counter {
+    border-color: #343a40;
+    background: linear-gradient(145deg, #fff, #f0f1f3);
 }
 
 #gameBoard.waiting-turn {
@@ -278,15 +429,21 @@ td.revealed {
     overflow: auto; /* Active les barres de défilement si nécessaire */
 }
 #currentTurnDisplay {
-    background-color: rgba(255, 255, 255, 0.9); /* Fond blanc semi-transparent */
-    padding: 10px 20px;
-    border-radius: 10px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Ombre légère pour le relief */
+    background: linear-gradient(135deg, rgba(9, 35, 59, .96), rgba(18, 64, 91, .94));
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .28);
+    color: #fff;
     font-size: 18px;
     font-weight: bold;
-    margin-bottom: 10px;
-    max-width: 300px;
-    text-align: center;
+    margin: 0 auto 8px;
+    max-width: none;
+}
+
+#currentTurnText {
+    min-height: 1.35em;
+    text-align: left;
 }
 #winnerModal {
     display: none;
@@ -650,9 +807,32 @@ table.table th, table.table td {
     box-shadow: inset 0 0 0 3px #8b0000;
 }
 
-.incorrect-flag {
-    color: grey; /* Changez si nécessaire */
-    text-decoration: line-through;
+.incorrect-flag .cell-back {
+    overflow: visible;
+}
+
+.incorrect-flag-cross {
+    position: absolute;
+    z-index: 4;
+    color: #dc1828;
+    font: 900 38px/1 Arial, sans-serif;
+    text-shadow: 0 1px 2px #fff, 0 0 4px rgba(255,255,255,.9);
+    transform: rotate(-8deg);
+    animation: incorrectFlagReveal .35s cubic-bezier(.2, .9, .25, 1.25) both;
+}
+
+.winner-flag-score {
+    margin: 6px 0;
+    padding: 7px 10px;
+    border: 1px solid currentColor;
+    border-radius: 8px;
+    background: rgba(255,255,255,.78);
+    font-weight: 700;
+}
+
+@keyframes incorrectFlagReveal {
+    from { opacity: 0; transform: rotate(-8deg) scale(1.8); }
+    to { opacity: 1; transform: rotate(-8deg) scale(1); }
 }
 
 .cell {
@@ -672,6 +852,74 @@ table.table th, table.table td {
 .cell.pending-reveal .cell-front {
     filter: brightness(1.18);
     transform: scale(0.94);
+}
+
+.cell.pending-action {
+    cursor: progress !important;
+    pointer-events: none;
+}
+
+.cell.pending-reveal .cell-front {
+    overflow: hidden;
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .5), 0 0 8px rgba(42, 184, 255, .65);
+}
+
+.cell.pending-reveal .cell-front::after {
+    content: '';
+    position: absolute;
+    inset: -40%;
+    background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.75) 50%, transparent 65%);
+    animation: pendingCellSweep .9s linear infinite;
+}
+
+.cell.pending-flag-add .cell-front,
+.cell.pending-flag-remove .cell-front {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cell.pending-flag-add .player-flag {
+    color: #f2c94c;
+    opacity: .5;
+    filter: saturate(.75);
+    animation: pendingFlagPulse .7s ease-in-out infinite alternate;
+}
+
+.cell.pending-flag-remove .player-flag {
+    opacity: .35;
+    animation: pendingFlagRemove .7s ease-in-out infinite alternate;
+}
+
+#gameBoard.action-delayed::before {
+    content: 'Validation…';
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    z-index: 20;
+    transform: translateX(-50%);
+    padding: 6px 12px;
+    border-radius: 999px;
+    color: #fff;
+    background: rgba(9, 35, 59, .92);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .3);
+    font-size: .9rem;
+    pointer-events: none;
+}
+
+@keyframes pendingCellSweep {
+    from { transform: translateX(-55%); }
+    to { transform: translateX(55%); }
+}
+
+@keyframes pendingFlagPulse {
+    from { transform: scale(.86) rotate(-3deg); }
+    to { transform: scale(1.06) rotate(2deg); }
+}
+
+@keyframes pendingFlagRemove {
+    from { transform: scale(1); }
+    to { transform: scale(.78); }
 }
 
 .cell.revealed .cell-inner {
@@ -713,20 +961,28 @@ table.table th, table.table td {
 /* Mode PC : afficher l'info sur le joueur à gauche de la grille */
 @media (min-width: 769px) {
     #gameContainer {
-        /*display: none;*/
         justify-content: center;
-        align-items: flex-start;
+        align-items: center;
     }
 
     #currentTurnDisplay {
-        width: 400px;
-        margin-right: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        width: min(720px, 88vw);
+        margin: 8px auto;
         text-align: left;
-        align-self: flex-start; /* S'aligne en haut à gauche */
+    }
+
+    #currentTurnText {
+        flex: 1 1 auto;
+        white-space: nowrap;
     }
 
     #plateau {
         flex-direction: row;
+        margin-top: 8px;
     }
 }
 .display-none { display: none !important; }
@@ -813,14 +1069,38 @@ table.table th, table.table td {
         width: 100%;
         max-width: none;
         margin: 0;
-        padding: 7px 10px;
+        padding: 8px;
         font-size: 1rem;
-        box-shadow: none;
-        background: transparent;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, .22);
     }
+
+    #currentTurnText { text-align: center; }
 
     #gameCounters {
         margin-top: 2px;
+        gap: 5px;
+        width: 100%;
+    }
+
+    .game-counter {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 6px 7px;
+        border-radius: 9px;
+    }
+
+    .game-counter .counter-icon {
+        margin-right: 5px;
+        font-size: 1.15rem;
+    }
+
+    .game-counter .counter-label {
+        font-size: .58rem;
+        letter-spacing: 0;
+    }
+
+    .game-counter strong {
+        font-size: 1.15rem;
     }
 
     #plateau {

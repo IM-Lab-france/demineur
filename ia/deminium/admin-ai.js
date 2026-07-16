@@ -194,6 +194,24 @@
                 });
             });
 
+            $('.leave-game-btn').click(function () {
+                var iaName = $(this).data('ia');
+                var button = $(this);
+                if (!window.confirm('Demander à ' + iaName + ' de quitter sa partie en cours ?')) return;
+                button.prop('disabled', true);
+                $.ajax({
+                    url: 'leave_game.php',
+                    method: 'POST',
+                    data: { iaName: iaName },
+                    dataType: 'json',
+                    success: function (response) { showToast(response.message, 'success'); },
+                    error: function (xhr) {
+                        button.prop('disabled', false);
+                        showToast(xhr.responseJSON?.message || 'Demande impossible.', 'danger');
+                    }
+                });
+            });
+
             // Gestion du clic sur le bouton "Nouveau"
             $('#new-ia-btn').click(function () {
                 // Réinitialiser les variables
@@ -382,6 +400,7 @@
                                 row.find('.stop-btn').prop('disabled', !status.running);
                                 row.find('.delete-icon').toggleClass('disabled', status.running);
                                 row.find('.reset-stats-btn').prop('disabled', status.running);
+                                row.find('.leave-game-btn').prop('disabled', !status.running || !status.inGame);
                                 row.find('.status-dot').toggleClass('running', status.running);
                                 row.find('.status-label').text(status.running ? 'Démarrée' : 'Arrêtée');
                             } else {
