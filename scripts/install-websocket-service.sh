@@ -97,6 +97,9 @@ fi
 if [[ -f "$project_dir/install/migrations/20260716_social_graph.sql" ]]; then
     MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260716_social_graph.sql"
 fi
+if [[ -f "$project_dir/install/migrations/20260716_text_chat.sql" ]]; then
+    MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" < "$project_dir/install/migrations/20260716_text_chat.sql"
+fi
 if [[ ! -f "$secure_dir/ia_accounts.json" && -f "$legacy_ia_accounts" ]]; then
     install -o root -g minesweeper -m 0640 "$legacy_ia_accounts" "$secure_dir/ia_accounts.json"
     rm -f "$legacy_ia_accounts"

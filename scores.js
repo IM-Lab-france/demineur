@@ -43,6 +43,7 @@ function connectWebSocket() {
     socket.onmessage = function(event) {
         const data = JSON.parse(event.data);
         console.log('Message reçu du serveur: ' + JSON.stringify(data));
+        if (data.type.startsWith('chat_') && typeof window.handleChatEvent === 'function') window.handleChatEvent(data);
 
         // Traiter le message envoyé par le serveur
         switch (data.type) {
@@ -54,6 +55,7 @@ function connectWebSocket() {
                 authenticatedUserId = Number(data.playerId);
                 document.getElementById('navbarUserDisplay').textContent = data.username;
                 requestSocialState();
+                if (typeof window.requestChatState === 'function') window.requestChatState();
                 fetchPlayerScores();
                 break;
             case 'logout_success':
@@ -212,7 +214,7 @@ function fillSocial(id, rows, empty) { const el = document.getElementById(id); e
 function renderSocialState(state) {
     scoreSocialState = state;
     const friends = state.friends || [];
-    const friendRow = p => socialRow(p, [['❌','remove_friend','btn-outline-secondary',`Supprimer ${p.username} de vos amis ?`],['🚫','block_user','btn-outline-danger',`Bloquer ${p.username} ?`]], p.online ? 'En ligne' : `Hors ligne · ${p.last_active || 'activité inconnue'}`);
+    const friendRow = p => { const row= socialRow(p, [['❌','remove_friend','btn-outline-secondary',`Supprimer ${p.username} de vos amis ?`],['🚫','block_user','btn-outline-danger',`Bloquer ${p.username} ?`]], p.online ? 'En ligne' : `Hors ligne · ${p.last_active || 'activité inconnue'}`); const chat=document.createElement('button');chat.type='button';chat.className='btn btn-sm btn-outline-info';chat.textContent='💬';chat.title='Écrire';chat.onclick=()=>window.openDirectChat(p.id);row.querySelector('.social-entry-actions').prepend(chat);return row; };
     fillSocial('onlineFriends', friends.filter(p => p.online).map(friendRow), 'Aucun ami connecté.'); fillSocial('offlineFriends', friends.filter(p => !p.online).map(friendRow), 'Aucun ami hors ligne.');
     fillSocial('incomingFriendRequests', (state.incoming || []).map(p => socialRow(p, [['👍','accept_friend_request','btn-success'],['👎','decline_friend_request','btn-outline-secondary'],['🚫','block_user','btn-outline-danger']], p.message || 'Demande d’amitié')), 'Aucune demande reçue.');
     fillSocial('outgoingFriendRequests', (state.outgoing || []).map(p => socialRow(p, [], p.message || 'En attente')), 'Aucune demande envoyée.');

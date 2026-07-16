@@ -6,7 +6,7 @@
     <meta name="ws-url" content="">
     <title>Scores des Joueurs</title>
     <link href="/assets/vendor/bootstrap/4.5.2/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260716-social2"> <!-- Style commun -->
+    <link rel="stylesheet" href="styles.css?v=20260716-chat7"> <!-- Style commun -->
     <!-- Ajout du favicon -->
     <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
 </head>
@@ -26,6 +26,7 @@
                     <a class="nav-link" href="scores.html">Scores</a>
                 </li>
                 <li class="nav-item"><button id="socialPanelToggle" class="btn btn-link nav-link" type="button">Relations <span id="socialBadge" class="badge badge-danger hidden">0</span></button></li>
+                <li class="nav-item"><button id="chatToggle" class="btn btn-link nav-link" type="button">💬 <span id="chatBadge" class="badge badge-danger hidden">0</span></button></li>
                 <li class="nav-item">
                     <a id="logoutLink" class="nav-link text-danger" href="#">Déconnexion</a>
                 </li>
@@ -45,6 +46,7 @@
         <section><h3>Joueurs bloqués</h3><div id="blockedUsers"></div></section>
         <section><h3>Notifications</h3><div id="socialNotifications"></div></section>
     </aside><div id="socialPanelBackdrop" class="social-panel-backdrop" hidden></div>
+    <section id="chatWindow" class="chat-window" aria-hidden="true"><header class="chat-header"><strong>Messages</strong><span><button id="chatMinimize" type="button" title="Réduire">—</button><button id="chatClose" type="button" title="Fermer">×</button></span></header><div class="chat-body"><nav id="chatConversations" class="chat-conversations"></nav><main class="chat-thread"><div class="chat-title"><span id="chatTitle">Choisissez une conversation</span><span><button id="chatMute" type="button" title="Mettre en sourdine">🔔</button><button id="chatHide" type="button" title="Supprimer cette conversation">🗑️</button></span></div><div id="chatMessages" class="chat-messages"></div><div id="chatTyping" class="chat-typing"></div><form id="chatForm"><textarea id="chatInput" maxlength="500" rows="2" placeholder="Votre message…"></textarea><button type="submit">➤</button></form></main></div></section>
 
     
     <div id="scoresContainer" class="container text-center mt-5">
@@ -81,5 +83,6 @@
     <script defer src="/assets/vendor/jquery/jquery-3.5.1.slim.min.js"></script>
     <script defer src="/assets/vendor/bootstrap/4.5.2/bootstrap.bundle.min.js"></script>
     <script defer src="scores.js?v=20260716-social7"></script>
+    <script defer src="chat-ui.js?v=20260716-chat11"></script>
 </body>
 </html>

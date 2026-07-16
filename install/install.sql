@@ -138,3 +138,4 @@ CREATE TABLE `auth_sessions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SOURCE install/migrations/20260716_social_graph.sql;
+SOURCE install/migrations/20260716_text_chat.sql;

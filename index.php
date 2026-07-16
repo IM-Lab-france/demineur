@@ -38,6 +38,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
                 <li class="nav-item">
                     <button id="socialPanelToggle" class="btn btn-link nav-link" type="button" aria-controls="socialPanel" aria-expanded="false">Relations <span id="socialBadge" class="badge badge-danger hidden">0</span></button>
                 </li>
+                <li class="nav-item"><button id="chatToggle" class="btn btn-link nav-link" type="button">💬 <span id="chatBadge" class="badge badge-danger hidden">0</span></button></li>
                 <li>
                     <button id="muteButton" class="btn btn-light" aria-label="Couper ou rétablir le son">🔊</button>
                 </li>
@@ -48,6 +49,10 @@ if (!is_dir(__DIR__ . '/vendor')) {
         </div>
         <span id="welcomeMessage" class="navbar-text ml-auto pr-3">Bienvenue, <span id="navbarUserDisplay"></span></span>
     </nav>
+
+    <header id="homeStatusBar" class="display-none" aria-label="En-tête de l'accueil">
+        <strong>Démineur multijoueur</strong>
+    </header>
 
     <aside id="socialPanel" class="social-panel" aria-hidden="true" aria-labelledby="socialPanelTitle">
         <header class="social-panel-header"><h2 id="socialPanelTitle">Relations</h2><button id="socialPanelClose" type="button" class="close" aria-label="Fermer">×</button></header>
@@ -61,6 +66,10 @@ if (!is_dir(__DIR__ . '/vendor')) {
         <section><h3>Notifications</h3><div id="socialNotifications"></div></section>
     </aside>
     <div id="socialPanelBackdrop" class="social-panel-backdrop" hidden></div>
+    <section id="chatWindow" class="chat-window" aria-hidden="true">
+        <header class="chat-header"><strong>Messages</strong><span><button id="chatMinimize" type="button" title="Réduire">—</button><button id="chatClose" type="button" title="Fermer">×</button></span></header>
+        <div class="chat-body"><nav id="chatConversations" class="chat-conversations"></nav><main class="chat-thread"><div class="chat-title"><span id="chatTitle">Choisissez une conversation</span><span><button id="chatMute" type="button" title="Mettre en sourdine">🔔</button><button id="chatHide" type="button" title="Supprimer cette conversation">🗑️</button></span></div><div id="chatMessages" class="chat-messages"></div><div id="chatTyping" class="chat-typing"></div><form id="chatForm"><textarea id="chatInput" maxlength="500" rows="2" placeholder="Votre message…"></textarea><button type="submit">➤</button></form></main></div>
+    </section>
 
     <!-- Aide Overlay -->
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" title="Connexion…">
@@ -251,5 +260,6 @@ if (!is_dir(__DIR__ . '/vendor')) {
     <script defer src="/assets/vendor/jquery/jquery-3.5.1.slim.min.js"></script>
     <script defer src="/assets/vendor/bootstrap/4.5.2/bootstrap.bundle.min.js"></script>
     <script defer src="script.js?v=<?= (int) filemtime(__DIR__ . '/script.js') ?>"></script> <!-- Lien vers le fichier JavaScript -->
+    <script defer src="chat-ui.js?v=<?= (int) filemtime(__DIR__ . '/chat-ui.js') ?>"></script>
 </body>
 </html>

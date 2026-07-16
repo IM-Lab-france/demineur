@@ -11,6 +11,22 @@ function setElementDisplay(element, display) {
 function setGameActive(active) {
     document.body.classList.toggle('game-active', Boolean(active));
 }
+
+function syncGameStatusBarHeight() {
+    const statusBar = document.getElementById('currentTurnDisplay');
+    if (!statusBar) return;
+    const height = Math.ceil(statusBar.getBoundingClientRect().height);
+    if (height >= 40) {
+        document.documentElement.style.setProperty('--game-status-height', `${height}px`);
+    }
+}
+
+const observedGameStatusBar = document.getElementById('currentTurnDisplay');
+if (observedGameStatusBar && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(syncGameStatusBarHeight).observe(observedGameStatusBar);
+}
+window.addEventListener('resize', syncGameStatusBarHeight);
+syncGameStatusBarHeight();
 let username;
 let currentGameId;
 let refreshInterval;
@@ -87,8 +103,8 @@ showLoginModalLink.addEventListener('click', (e) => {
     showLoginModal();
 });
 
-muteButton.addEventListener('click', () => {
-    isMuted = !isMuted;
+function applySoundPreference(enabled) {
+    isMuted = !enabled;
     const newIcon = isMuted ? '🔇' : '🔊';
     muteButton.textContent = newIcon;
 
@@ -96,6 +112,14 @@ muteButton.addEventListener('click', () => {
     [soundClick, soundMine, soundFlag, soundWin, soundLose,soundTie].forEach(sound => {
         sound.muted = isMuted;
     });
+}
+window.applySoundPreference = applySoundPreference;
+
+muteButton.addEventListener('click', () => {
+    applySoundPreference(isMuted);
+    if (socket?.readyState === WebSocket.OPEN && username) {
+        socket.send(JSON.stringify({ type: 'set_sound_preference', enabled: !isMuted }));
+    }
 });
 
 // gestion de l'aide en jeu
@@ -219,6 +243,7 @@ function connectWebSocket() {
     socket.onmessage = function(event) {
         const data = JSON.parse(event.data);
         logMessage('Message reçu du serveur: ' + JSON.stringify(data));
+        if (data.type.startsWith('chat_') && typeof window.handleChatEvent === 'function') window.handleChatEvent(data);
 
         switch (data.type) {
             case 'pong':
@@ -242,12 +267,14 @@ function connectWebSocket() {
                 setElementDisplay(document.getElementById('game'), 'block');
                 document.getElementById('navbarUserDisplay').textContent = data.username;
                 setElementDisplay(document.getElementById('navbar'), 'block');
+                setElementDisplay(document.getElementById('homeStatusBar'), 'flex');
                 setElementDisplay(document.getElementById('welcomeMessage'), 'block');
                 setElementDisplay(document.getElementById('logoutLink'), 'block');
                 setElementDisplay(document.getElementById('availableUser'), 'block');
                 refreshPlayersList(data.players);
                 requestActiveGames();
                 requestSocialState();
+                if (typeof window.requestChatState === 'function') window.requestChatState();
                 clearInterval(refreshInterval);
                 refreshInterval = setInterval(requestActiveGames, 5000);
                 break;
@@ -302,6 +329,7 @@ function connectWebSocket() {
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 document.getElementById('currentTurnText').textContent = `Observation : tour de ${data.currentPlayer}`;
                 renderGameRelations(data.participants);
+                setTimeout(() => window.requestChatState?.(), 0);
                 break;
 
             case 'spectator_left':
@@ -322,6 +350,7 @@ function connectWebSocket() {
                 currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = 'C\'est à ' + data.currentPlayer + ' de commencer.'; // Afficher qui commence
                 renderGameRelations(data.participants);
+                setTimeout(() => window.requestChatState?.(), 0);
 
 
                 logMessage('Tour actuel: ' + data.turn);
@@ -341,6 +370,7 @@ function connectWebSocket() {
                 currentPlayerDisplay = document.getElementById('currentTurnText');
                 currentPlayerDisplay.textContent = 'Partie reprise — tour actuel : ' + data.currentPlayer;
                 renderGameRelations(data.participants);
+                setTimeout(() => window.requestChatState?.(), 0);
                 showHelpIcon();
                 break;
 
@@ -690,6 +720,7 @@ function replaceSocialList(id, entries, emptyMessage) {
 function renderSocialState(state) {
     const friends = Array.isArray(state.friends) ? state.friends : [];
     const friendRow = friend => socialEntry(friend, [
+        { label: '💬', variant: 'btn-outline-info', callback: () => window.openDirectChat(friend.id) },
         ...(friend.online ? [{ label: '🎮', variant: 'btn-outline-primary', callback: () => invitePlayer(friend.id) }] : []),
         { label: '❌', variant: 'btn-outline-secondary', callback: () => socialAction('remove_friend', friend.id, `Supprimer ${friend.username} de vos amis ?`) },
         { label: '🚫', variant: 'btn-outline-danger', callback: () => socialAction('block_user', friend.id, `Bloquer ${friend.username} ?`) },
@@ -1077,6 +1108,7 @@ function handleLogoutSuccess() {
     setGameActive(false);
     setElementDisplay(document.getElementById('game'), 'none');
     setElementDisplay(document.getElementById('navbar'), 'none');
+    setElementDisplay(document.getElementById('homeStatusBar'), 'none');
     showLoginModal();
     logMessage('Vous avez été déconnecté.');
 }

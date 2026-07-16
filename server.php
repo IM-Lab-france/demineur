@@ -28,6 +28,7 @@ require __DIR__ . '/src/AccountTokenService.php';
 require __DIR__ . '/src/MailService.php';
 require __DIR__ . '/src/MailQueueRepository.php';
 require __DIR__ . '/src/SocialRepository.php';
+require __DIR__ . '/src/ChatRepository.php';
 
 
 // Le logger est initialisé avant le serveur et la base afin de conserver aussi
@@ -132,6 +133,8 @@ class MinesweeperServer implements MessageComponentInterface {
     protected $db;
     protected $authSessionRepository;
     protected $socialRepository;
+    protected $chatRepository;
+    protected array $chatWindows = [];
 
     public function __construct($logger) {
         $this->clients = new \SplObjectStorage;
@@ -144,6 +147,7 @@ class MinesweeperServer implements MessageComponentInterface {
         $this->db = new Database();
         $this->authSessionRepository = new AuthSessionRepository($this->db->getPDO());
         $this->socialRepository = new SocialRepository($this->db->getPDO());
+        $this->chatRepository = new ChatRepository($this->db->getPDO(), $this->socialRepository);
         $this->loadRecoverableGames();
         register_shutdown_function(function (): void {
             if ($this->pendingMoves) $this->flushPendingMoves();
@@ -189,6 +193,7 @@ class MinesweeperServer implements MessageComponentInterface {
             if ($this->db->reconnectIfNeeded()) {
                 $this->authSessionRepository = new AuthSessionRepository($this->db->getPDO());
                 $this->socialRepository = new SocialRepository($this->db->getPDO());
+                $this->chatRepository = new ChatRepository($this->db->getPDO(), $this->socialRepository);
                 $this->recordMoveStatement = null;
                 $this->logger->info('Connexion MySQL rétablie après expiration.');
             }
@@ -323,6 +328,18 @@ class MinesweeperServer implements MessageComponentInterface {
                 $this->socialRepository->setRequestsEnabled((int) $this->players[$from->resourceId]['id'], !empty($data['friendRequestsEnabled']));
                 $this->sendSocialState($from);
                 break;
+            case 'get_chat_state': $this->sendChatState($from); break;
+            case 'open_direct_chat': $this->openDirectChat($from, $data); break;
+            case 'get_chat_messages': $this->sendChatMessages($from, $data); break;
+            case 'send_chat_message': $this->handleChatMessage($from, $data); break;
+            case 'mark_chat_read': $this->handleChatRead($from, $data); break;
+            case 'delete_chat_message': $this->handleChatDelete($from, $data); break;
+            case 'react_chat_message': $this->handleChatReaction($from, $data); break;
+            case 'hide_chat_conversation': $this->handleChatHide($from, $data); break;
+            case 'set_chat_muted': $this->handleChatMuted($from, $data); break;
+            case 'set_chat_preferences': $this->handleChatPreferences($from, $data); break;
+            case 'set_sound_preference': $this->handleSoundPreference($from, $data); break;
+            case 'chat_typing': $this->handleChatTyping($from, $data); break;
             default:
                 $this->sendError($from, 'Action inconnue.', ['action' => $data['type']]);
                 break;
@@ -338,7 +355,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString(),
             ]);
-            $socialActions = ['send_friend_request','accept_friend_request','decline_friend_request','remove_friend','block_user','unblock_user','set_social_preferences'];
+            $socialActions = ['send_friend_request','accept_friend_request','decline_friend_request','remove_friend','block_user','unblock_user','set_social_preferences','open_direct_chat','get_chat_messages','send_chat_message','mark_chat_read','delete_chat_message','react_chat_message','hide_chat_conversation','set_chat_muted','set_chat_preferences','set_sound_preference','chat_typing'];
             $publicMessage = in_array($data['type'], $socialActions, true) && ($e instanceof InvalidArgumentException || $e instanceof RuntimeException)
                 ? $e->getMessage()
                 : 'Erreur interne pendant le traitement de l’action.';
@@ -565,6 +582,7 @@ class MinesweeperServer implements MessageComponentInterface {
         $userId = (int) $this->players[$from->resourceId]['id'];
         $target = $this->socialTarget($data);
         if (!$this->socialRepository->removeFriend($userId, $target)) throw new RuntimeException('Amitié introuvable.');
+        $this->chatRepository->closeDirect($userId,$target,false);
         $this->refreshSocialUsers([$userId, $target]);
         $this->broadcastConnectedPlayersList($from->resourceId);
     }
@@ -582,6 +600,7 @@ class MinesweeperServer implements MessageComponentInterface {
             }
         }
         $this->socialRepository->block($userId, $target);
+        $this->chatRepository->closeDirect($userId,$target,true);
         $this->refreshSocialUsers([$userId, $target]);
         $this->broadcastConnectedPlayersList($from->resourceId);
     }
@@ -600,6 +619,27 @@ class MinesweeperServer implements MessageComponentInterface {
             if ($clientUserId && in_array($clientUserId, $userIds, true)) $this->sendSocialState($client);
         }
     }
+
+    protected function sendChatState(ConnectionInterface $connection): void {
+        $user=(int)$this->players[$connection->resourceId]['id'];
+        $connection->send(json_encode(['type'=>'chat_state','conversations'=>$this->chatRepository->listForUser($user),'preferences'=>$this->chatRepository->preferences($user)]));
+    }
+    protected function chatConversation(array $data): int { $id=filter_var($data['conversationId']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);if($id===false)throw new InvalidArgumentException('Conversation invalide.');return(int)$id; }
+    protected function openDirectChat(ConnectionInterface $from,array $data): void { $user=(int)$this->players[$from->resourceId]['id'];$other=$this->socialTarget($data);$id=$this->chatRepository->directConversation($user,$other);$this->sendChatState($from);$from->send(json_encode(['type'=>'chat_opened','conversationId'=>$id])); }
+    protected function sendChatMessages(ConnectionInterface $from,array $data): void { $user=(int)$this->players[$from->resourceId]['id'];$id=$this->chatConversation($data);$from->send(json_encode(['type'=>'chat_messages','conversationId'=>$id,'messages'=>$this->chatRepository->messages($user,$id)])); }
+    protected function handleChatMessage(ConnectionInterface $from,array $data): void {
+        $user=(int)$this->players[$from->resourceId]['id'];$now=microtime(true);$window=array_values(array_filter($this->chatWindows[$user]??[],fn($time)=>$time>$now-5));if(count($window)>=5)throw new RuntimeException('Vous envoyez des messages trop rapidement.');$window[]=$now;$this->chatWindows[$user]=$window;
+        $id=$this->chatConversation($data);$message=$this->chatRepository->send($user,$id,(string)($data['message']??''));$message['username']=$this->players[$from->resourceId]['username'];$this->broadcastChat($id,['type'=>'chat_message','message'=>$message]);
+    }
+    protected function handleChatRead(ConnectionInterface $from,array $data): void { $id=$this->chatConversation($data);$message=(int)($data['messageId']??0);$this->chatRepository->markRead((int)$this->players[$from->resourceId]['id'],$id,$message);$this->broadcastChat($id,['type'=>'chat_read','conversationId'=>$id,'userId'=>(int)$this->players[$from->resourceId]['id'],'messageId'=>$message]); }
+    protected function handleChatDelete(ConnectionInterface $from,array $data): void { $message=$this->chatRepository->deleteMessage((int)$this->players[$from->resourceId]['id'],(int)($data['messageId']??0));foreach($this->clients as $client)if($this->isAuthenticated($client))$client->send(json_encode(['type'=>'chat_message_deleted','messageId'=>$message])); }
+    protected function handleChatReaction(ConnectionInterface $from,array $data): void { $conversation=$this->chatRepository->react((int)$this->players[$from->resourceId]['id'],(int)($data['messageId']??0),(string)($data['reaction']??''));$this->broadcastChat($conversation,['type'=>'chat_reaction','conversationId'=>$conversation,'messageId'=>(int)$data['messageId'],'userId'=>(int)$this->players[$from->resourceId]['id'],'reaction'=>(string)$data['reaction']]); }
+    protected function handleChatHide(ConnectionInterface $from,array $data): void { $this->chatRepository->hide((int)$this->players[$from->resourceId]['id'],$this->chatConversation($data));$this->sendChatState($from); }
+    protected function handleChatMuted(ConnectionInterface $from,array $data): void { $this->chatRepository->setMuted((int)$this->players[$from->resourceId]['id'],$this->chatConversation($data),!empty($data['muted']));$this->sendChatState($from); }
+    protected function handleChatPreferences(ConnectionInterface $from,array $data): void { $this->chatRepository->savePreferences((int)$this->players[$from->resourceId]['id'],$data);$this->sendChatState($from); }
+    protected function handleSoundPreference(ConnectionInterface $from,array $data): void { $this->chatRepository->setGlobalSound((int)$this->players[$from->resourceId]['id'],!empty($data['enabled']));$this->sendChatState($from); }
+    protected function handleChatTyping(ConnectionInterface $from,array $data): void { $id=$this->chatConversation($data);$this->chatRepository->messages((int)$this->players[$from->resourceId]['id'],$id,1);$this->broadcastChat($id,['type'=>'chat_typing','conversationId'=>$id,'userId'=>(int)$this->players[$from->resourceId]['id'],'username'=>$this->players[$from->resourceId]['username'],'typing'=>!empty($data['typing'])],(int)$this->players[$from->resourceId]['id']); }
+    protected function broadcastChat(int $conversation,array $payload,?int $excludeUser=null): void { $participants=$this->chatRepository->participantIds($conversation);foreach($this->clients as $client){$user=(int)($this->players[$client->resourceId]['id']??0);if(!$user||$user===$excludeUser||!in_array($user,$participants,true))continue;$client->send(json_encode($payload));$this->sendChatState($client);} }
 
     // Fonction pour inscrire un spectateur à une partie
     protected function addSpectator(ConnectionInterface $from, $data) {
@@ -626,6 +666,7 @@ class MinesweeperServer implements MessageComponentInterface {
             if (!in_array($from->resourceId, $this->games[$gameId]['spectators'] ?? [], true)) {
                 $this->games[$gameId]['spectators'][] = $from->resourceId;
             }
+            $this->chatRepository->addGameParticipant($gameId, $viewerId, false);
     
             // Récupérer la taille de la grille pour la partie
             $board = $this->games[$gameId]['board'];
@@ -652,6 +693,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 ],
                 'participants' => $this->gameParticipants($this->games[$gameId])
             ]));
+            $this->sendChatState($from);
         } else {
             $from->send(json_encode([
                 'type' => 'error',
@@ -1371,6 +1413,11 @@ class MinesweeperServer implements MessageComponentInterface {
                 'isPrivate' => (bool) ($invitation['isPrivate'] ?? true),
                 'spectators' => []
             ];
+            $chatConversationId = $this->chatRepository->gameConversation($gameId, [
+                (int)$this->players[$inviteeResourceId]['id'],
+                (int)$this->players[$inviterResourceId]['id'],
+            ]);
+            $this->chatRepository->systemMessage($chatConversationId, 'La partie commence. Bonne chance !');
             $this->persistGame($gameId);
             $this->writeStatusSnapshot();
             $this->logger->info('Partie créée.', [
@@ -1402,6 +1449,7 @@ class MinesweeperServer implements MessageComponentInterface {
                         ,'mineCount' => $numMines
                         ,'participants' => $this->gameParticipants($this->games[$gameId])
                     ]));
+                    $this->sendChatState($connection);
                 }
             }
     
@@ -2157,6 +2205,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 'moves' => (int) ($state['moves'] ?? 0), 'mineCount' => (int) $state['mineCount'],
                 'isPrivate' => (bool) ($state['isPrivate'] ?? true), 'spectators' => [],
             ];
+            $this->chatRepository->gameConversation($gameId, array_map('intval', $snapshot['player_user_ids']));
             unset($this->recoverableGames[$gameId]);
             foreach ($this->games[$gameId]['players'] as $resourceId) {
                 $connection = $this->getConnectionFromPlayerId($resourceId);
