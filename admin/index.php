@@ -125,7 +125,7 @@ try {
     <section class="card mt-5">
         <div class="card-body">
             <h2 class="h4">Réinitialisation des scores</h2>
-            <p class="text-muted">Cette action remet à zéro les parties jouées, victoires et égalités. L’historique des parties est conservé.</p>
+            <p class="text-muted">Cette action remet à zéro les parties, les résultats et le classement Elo (1200). L’historique reste archivé mais n’est plus compté dans les tableaux.</p>
             <div class="alert alert-warning py-2">Arrêtez le serveur avant de réinitialiser les scores.</div>
             <div class="row g-3 align-items-end">
                 <div class="col-md-8">

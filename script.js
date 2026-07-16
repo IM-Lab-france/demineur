@@ -334,7 +334,7 @@ function connectWebSocket() {
                 }
                 // Fin de partie et affichage du gagnant
                 displayGameBoard(data.board, data.losingCell);
-                showWinnerModal(resultMessage, data.game_id, data.flagScores);
+                showWinnerModal(resultMessage, data.game_id, data.flagScores, data.eloChanges);
             
                 hideHelpIcon();
                 break;
@@ -901,7 +901,7 @@ function placeFlag(x, y) {
 }
 
 // Afficher le modal du gagnant
-function showWinnerModal(winnerMessage, gameId, flagScores = []) {
+function showWinnerModal(winnerMessage, gameId, flagScores = [], eloChanges = []) {
     currentGameId = gameId;
     const modal = document.getElementById('winnerModal');
     const message = document.getElementById('winnerMessage');
@@ -914,6 +914,16 @@ function showWinnerModal(winnerMessage, gameId, flagScores = []) {
             line.className = `winner-flag-score flag-player-${Number(player.playerSlot) === 2 ? 2 : 1}`;
             line.textContent = `${player.username} : ${player.score} point${Math.abs(player.score) > 1 ? 's' : ''} (${player.correctFlags} correct${player.correctFlags > 1 ? 's' : ''}, ${player.incorrectFlags} incorrect${player.incorrectFlags > 1 ? 's' : ''})`;
             scores.appendChild(line);
+        });
+    }
+    if (Array.isArray(eloChanges)) {
+        eloChanges.forEach(player => {
+            const line = Array.from(scores.querySelectorAll('.winner-flag-score'))
+                .find(element => element.textContent.startsWith(`${player.username} :`));
+            if (!line) return;
+            const sign = Number(player.change) >= 0 ? '+' : '';
+            line.append(document.createElement('br'));
+            line.append(document.createTextNode(`Elo ${player.before} → ${player.after} (${sign}${player.change})`));
         });
     }
     setElementDisplay(modal, 'flex');

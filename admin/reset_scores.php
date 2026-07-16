@@ -31,7 +31,7 @@ try {
         if ($confirmation !== 'RESET') {
             throw new InvalidArgumentException('Confirmation globale invalide.');
         }
-        $affected = $pdo->exec('UPDATE users SET games_played = 0, games_won = 0, games_draw = 0');
+        $affected = $pdo->exec('UPDATE users SET games_played = 0, games_won = 0, games_draw = 0, elo_rating = 1200, elo_games = 0, stats_reset_at = CURRENT_TIMESTAMP');
         $message = "Scores réinitialisés pour tous les joueurs ({$affected} compte(s) modifié(s)).";
     } else {
         if ($confirmation !== 'PLAYER') {
@@ -41,7 +41,7 @@ try {
         if ($playerId === false) {
             throw new InvalidArgumentException('Joueur invalide.');
         }
-        $stmt = $pdo->prepare('UPDATE users SET games_played = 0, games_won = 0, games_draw = 0 WHERE id = :id');
+        $stmt = $pdo->prepare('UPDATE users SET games_played = 0, games_won = 0, games_draw = 0, elo_rating = 1200, elo_games = 0, stats_reset_at = CURRENT_TIMESTAMP WHERE id = :id');
         $stmt->execute(['id' => $playerId]);
         if ($stmt->rowCount() === 0) {
             $exists = $pdo->prepare('SELECT username FROM users WHERE id = :id');

@@ -1,5 +1,17 @@
 # Démineur multijoueur
 
+## Documentation d'évolution
+
+- [Conception des parties de 2 à 4 joueurs](docs/multiplayer-2-to-4-design.md)
+
+## Règles de score et classement
+
+Une explosion provoque une défaite immédiate. Si toutes les cases sûres sont
+révélées, chaque drapeau correct rapporte un point et chaque drapeau incorrect
+retire un point. Le meilleur score gagne; des scores identiques donnent une
+égalité. Le classement général utilise un Elo initial de 1200 avec un facteur
+K de 32. Une partie annulée ne modifie pas l'Elo.
+
 Application PHP/MySQL utilisant Ratchet pour les parties WebSocket, avec classement, comptes validés par e-mail, administration protégée par MFA, sauvegardes pilotées depuis l’administration et joueurs IA Python.
 
 ## Prérequis

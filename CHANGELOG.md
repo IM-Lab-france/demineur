@@ -4,6 +4,9 @@
 
 ### Added
 
+- Elo ranking (initial rating 1200, K-factor 32) with per-game rating history.
+- Score resets now exclude archived matches from period rankings and reset Elo to 1200.
+- End-of-game flag scoring: +1 for a correct flag and -1 for an incorrect flag.
 - Persistent `active_games` snapshots and recovery after a WebSocket restart.
 - Daily backups and weekly automated restore verification.
 - Guided MySQL secret-rotation script.
@@ -27,6 +30,8 @@
 
 ### Changed
 
+- Safe-board completion is now decided by flag score; equal scores remain a draw.
+- Players can only remove flags they placed themselves.
 - Moved administration and AI-management JavaScript into local static files.
 - Tightened CSP by removing `unsafe-inline` from scripts and styles.
 - Replaced inline presentation with CSS classes and native progress elements.

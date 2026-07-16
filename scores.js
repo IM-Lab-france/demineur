@@ -98,6 +98,14 @@ document.getElementById('rankingPeriod')?.addEventListener('change', () => {
     if (socket?.readyState === WebSocket.OPEN) fetchPlayerScores();
 });
 
+window.addEventListener('pageshow', () => {
+    if (socket?.readyState === WebSocket.OPEN) fetchPlayerScores();
+});
+
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && socket?.readyState === WebSocket.OPEN) fetchPlayerScores();
+});
+
 // Fonction pour afficher les scores des joueurs
 function refreshScores(players) {
     const scoresTable = document.getElementById('scoresTable');
@@ -125,7 +133,7 @@ function refreshScores(players) {
         row.insertCell().textContent = player.games_won || 0;
         row.insertCell().textContent = player.games_lost || 0;
         row.insertCell().textContent = player.games_draw || 0;
-        row.insertCell().textContent = player.ranking_points || 0;
+        row.insertCell().textContent = player.elo_rating || 1200;
         const percentageCell = row.insertCell();
         const percentage = Math.max(0, Math.min(100, winPercentage));
         const progress = document.createElement('progress');
@@ -144,7 +152,7 @@ function showScoresMessage(message) {
     scoresTable.innerHTML = '';
     const row = document.createElement('tr');
     const cell = row.insertCell();
-    cell.colSpan = 8;
+    cell.colSpan = 7;
     cell.className = 'text-center text-muted';
     cell.textContent = message;
     scoresTable.appendChild(row);

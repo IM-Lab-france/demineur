@@ -65,7 +65,7 @@ if (!is_dir(__DIR__ . '/vendor')) {
                     💣 Évitez de cliquer sur les mines, sauf si vous voulez voir ce qui se passe...
                 </li>
                 <li>
-                    🤝 Si toutes les cases sûres sont révélées sans explosion, la partie se termine par une égalité.
+                    🏆 Si toutes les cases sûres sont révélées, le meilleur score de drapeaux gagne : +1 par mine correctement marquée, −1 par erreur. Un score identique donne une égalité.
                 </li>
                 <li>
                     🔄 Le jeu se joue à tour de rôle avec votre adversaire. Ne le faites pas attendre trop longtemps, il pourrait s'impatienter.

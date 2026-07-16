@@ -1287,7 +1287,7 @@ class MinesweeperServer implements MessageComponentInterface {
         }
     }
 
-    protected function handleGameOver($game,$gameId, $winnerResourceId = null, $isDraw = false, $losingCell = null) {
+    protected function handleGameOver($game, $gameId, $winnerResourceId = null, $isDraw = false, $losingCell = null, array $flagScores = []) {
         $db = $this->db;
         $pdo = $db->getPDO();
     
@@ -1312,9 +1312,22 @@ class MinesweeperServer implements MessageComponentInterface {
         // Enregistrer les détails de la partie
         $pdo->beginTransaction();
         try {
+        $ratings = [];
+        $ratingStmt = $pdo->prepare('SELECT id, elo_rating FROM users WHERE id IN (:inviter_id, :invitee_id) FOR UPDATE');
+        $ratingStmt->execute(['inviter_id' => $inviterId, 'invitee_id' => $inviteeId]);
+        foreach ($ratingStmt->fetchAll(PDO::FETCH_ASSOC) as $ratingRow) {
+            $ratings[(int) $ratingRow['id']] = (int) $ratingRow['elo_rating'];
+        }
+        if (!isset($ratings[$inviterId], $ratings[$inviteeId])) {
+            throw new RuntimeException('Classements Elo des joueurs introuvables.');
+        }
+        $eloChanges = $this->calculateEloChanges($ratings[$inviterId], $ratings[$inviteeId], $winnerId, $inviterId, $inviteeId, $isDraw);
+
         $stmt = $pdo->prepare("
-            INSERT INTO game_details (game_id, inviter_id, invitee_id, winner_id, moves, explosion_area)
-            VALUES (:game_id, :inviter_id, :invitee_id, :winner_id, :moves, :explosion_area)
+            INSERT INTO game_details
+                (game_id, inviter_id, invitee_id, winner_id, moves, explosion_area, flag_scores, inviter_elo_change, invitee_elo_change)
+            VALUES
+                (:game_id, :inviter_id, :invitee_id, :winner_id, :moves, :explosion_area, :flag_scores, :inviter_elo_change, :invitee_elo_change)
         ");
         $stmt->execute([
             ':game_id' => $gameId,
@@ -1322,7 +1335,10 @@ class MinesweeperServer implements MessageComponentInterface {
             ':invitee_id' => $inviteeId,
             ':winner_id' => $winnerId,
             ':moves' => $moves,
-            ':explosion_area' => json_encode($explosionArea)
+            ':explosion_area' => json_encode($explosionArea),
+            ':flag_scores' => json_encode($flagScores, JSON_THROW_ON_ERROR),
+            ':inviter_elo_change' => $eloChanges[$inviterId]['change'],
+            ':invitee_elo_change' => $eloChanges[$inviteeId]['change'],
         ]);
     
         if ($isDraw) {
@@ -1337,11 +1353,27 @@ class MinesweeperServer implements MessageComponentInterface {
             $stmt->bindParam(':id', $winnerId);
             $stmt->execute();
         }
+        $ratingUpdate = $pdo->prepare('UPDATE users SET elo_rating=:rating, elo_games=elo_games+1 WHERE id=:id');
+        foreach ($eloChanges as $playerId => $elo) {
+            $ratingUpdate->execute(['rating' => $elo['after'], 'id' => $playerId]);
+        }
         $pdo->commit();
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
+        return $eloChanges;
+    }
+
+    protected function calculateEloChanges(int $ratingA, int $ratingB, ?int $winnerUserId, int $userAId, int $userBId, bool $isDraw, int $kFactor = 32): array {
+        $expectedA = 1 / (1 + pow(10, ($ratingB - $ratingA) / 400));
+        $scoreA = $isDraw ? 0.5 : ($winnerUserId === $userAId ? 1.0 : 0.0);
+        $changeA = (int) round($kFactor * ($scoreA - $expectedA));
+        $changeB = -$changeA;
+        return [
+            $userAId => ['before' => $ratingA, 'change' => $changeA, 'after' => $ratingA + $changeA],
+            $userBId => ['before' => $ratingB, 'change' => $changeB, 'after' => $ratingB + $changeB],
+        ];
     }
 
     // Fonction pour récupérer les cases autour de la cellule qui a explosé
@@ -1564,11 +1596,18 @@ class MinesweeperServer implements MessageComponentInterface {
             return;
         }
 
+        $playerSlot = array_search($from->resourceId, $this->games[$gameId]['players'], true);
+        $playerSlot = $playerSlot === false ? null : $playerSlot + 1;
+        $existingOwner = $this->games[$gameId]['board'][$x][$y]['flaggedBy'] ?? null;
+        if ($this->games[$gameId]['board'][$x][$y]['flagged'] && $existingOwner !== null && $existingOwner !== $playerSlot) {
+            $this->sendError($from, 'Vous ne pouvez retirer que vos propres drapeaux.');
+            return;
+        }
+
         $placingFlag = !$this->games[$gameId]['board'][$x][$y]['flagged'];
         $this->games[$gameId]['board'][$x][$y]['flagged'] = $placingFlag;
         if ($placingFlag) {
-            $playerSlot = array_search($from->resourceId, $this->games[$gameId]['players'], true);
-            $this->games[$gameId]['board'][$x][$y]['flaggedBy'] = $playerSlot === false ? null : $playerSlot + 1;
+            $this->games[$gameId]['board'][$x][$y]['flaggedBy'] = $playerSlot;
         } else {
             $this->games[$gameId]['board'][$x][$y]['flaggedBy'] = null;
         }
@@ -1701,9 +1740,13 @@ class MinesweeperServer implements MessageComponentInterface {
         if (!isset($this->games[$gameId])) return;
         
         $game = $this->games[$gameId];
-        [$winnerId, $winnerName] = $this->determineGameOutcome($game, $loserId, $isDraw, $explicitWinnerId);
         $flagScores = $this->calculateFlagScores($this->games[$gameId]);
-        $this->handleGameOver($game ,$gameId,$winnerId, $isDraw, $losingCell);
+        if ($isDraw) {
+            [$winnerId, $winnerName, $isDraw] = $this->determineFlagScoreOutcome($game, $flagScores);
+        } else {
+            [$winnerId, $winnerName] = $this->determineGameOutcome($game, $loserId, false, $explicitWinnerId);
+        }
+        $eloChanges = $this->handleGameOver($game, $gameId, $winnerId, $isDraw, $losingCell, $flagScores);
         // Révéler toutes les cellules du plateau
         $this->revealAllCells($this->games[$gameId]['board']);
         
@@ -1719,6 +1762,7 @@ class MinesweeperServer implements MessageComponentInterface {
                     'winner_name' => $winnerName,  // Envoi du nom du gagnant ou "Egalité"
                     'board' => $this->games[$gameId]['board'], // Envoyer le plateau complet révélé
                     'flagScores' => $flagScores,
+                    'eloChanges' => $this->formatEloChanges($game, $eloChanges),
                     'losingCell' => $losingCell,
                     'players' => $this->getConnectedPlayers()
                 ]));
@@ -1737,6 +1781,7 @@ class MinesweeperServer implements MessageComponentInterface {
                         'message' => $isDraw ? 'La partie se termine par une égalité!' : "La partie est terminée ! Le vainqueur est $winnerName.",
                         'board' => $this->games[$gameId]['board'],  // Envoyer le plateau complet révélé
                         'flagScores' => $flagScores,
+                        'eloChanges' => $this->formatEloChanges($game, $eloChanges),
                         'losingCell' => $losingCell
                     ]));
                 }
@@ -1762,6 +1807,27 @@ class MinesweeperServer implements MessageComponentInterface {
             }
         }
         throw new RuntimeException('Impossible de déterminer le résultat de la partie.');
+    }
+
+    protected function determineFlagScoreOutcome(array $game, array $flagScores): array {
+        $scoresBySlot = [];
+        foreach ($flagScores as $score) $scoresBySlot[(int) $score['playerSlot']] = (int) $score['score'];
+        $firstScore = $scoresBySlot[1] ?? 0;
+        $secondScore = $scoresBySlot[2] ?? 0;
+        if ($firstScore === $secondScore) return [null, 'Egalité', true];
+        $winnerSlot = $firstScore > $secondScore ? 0 : 1;
+        $winnerResourceId = $game['players'][$winnerSlot];
+        return [$winnerResourceId, $this->players[$winnerResourceId]['username'], false];
+    }
+
+    protected function formatEloChanges(array $game, array $eloChanges): array {
+        $formatted = [];
+        foreach ($game['players'] as $playerResourceId) {
+            $userId = (int) $this->players[$playerResourceId]['id'];
+            if (!isset($eloChanges[$userId])) continue;
+            $formatted[] = ['username' => $this->players[$playerResourceId]['username']] + $eloChanges[$userId];
+        }
+        return $formatted;
     }
 
     protected function calculateFlagScores(array &$game): array {
@@ -2116,17 +2182,17 @@ class MinesweeperServer implements MessageComponentInterface {
         $period = in_array($data['period'] ?? 'all', ['week', 'month', 'all'], true) ? $data['period'] : 'all';
         if ($period === 'all') {
             $stmt = $db->getPDO()->prepare("
-            SELECT username, is_ai, games_won, games_draw, games_played,
+            SELECT username, is_ai, games_won, games_draw, games_played, elo_rating, elo_games,
             GREATEST(games_played - games_won - games_draw, 0) AS games_lost,
             (games_won * 3 + games_draw) AS ranking_points,
             (games_won / NULLIF(games_played, 0)) * 100 AS win_percentage
             FROM users
-            ORDER BY ranking_points DESC, win_percentage DESC, username ASC
+            ORDER BY elo_rating DESC, elo_games DESC, username ASC
             ");
         } else {
             $interval = $period === 'week' ? '7 DAY' : '1 MONTH';
             $stmt = $db->getPDO()->prepare("
-                SELECT u.username, u.is_ai,
+                SELECT u.username, u.is_ai, u.elo_rating, u.elo_games,
                   COUNT(g.id) AS games_played,
                   COALESCE(SUM(g.winner_id = u.id), 0) AS games_won,
                   COALESCE(SUM(g.winner_id IS NULL), 0) AS games_draw,
@@ -2136,8 +2202,9 @@ class MinesweeperServer implements MessageComponentInterface {
                 FROM users u
                 LEFT JOIN game_details g ON (g.inviter_id = u.id OR g.invitee_id = u.id)
                   AND g.status = 'finished' AND g.game_date >= NOW() - INTERVAL {$interval}
-                GROUP BY u.id, u.username, u.is_ai
-                ORDER BY ranking_points DESC, win_percentage DESC, u.username ASC
+                  AND (u.stats_reset_at IS NULL OR g.game_date >= u.stats_reset_at)
+                GROUP BY u.id, u.username, u.is_ai, u.elo_rating, u.elo_games
+                ORDER BY u.elo_rating DESC, games_played DESC, u.username ASC
             ");
         }
         $stmt->execute();

@@ -40,6 +40,26 @@ outcome_assert($flagScores[1]['score'] === -1, 'Un mauvais drapeau doit retirer 
 outcome_assert($scoredGame['board'][0][1]['incorrectFlag'] === true, 'Un mauvais drapeau doit être marqué pour la révélation finale.');
 outcome_assert($scoredGame['board'][0][0]['incorrectFlag'] === false, 'Un drapeau correctement placé ne doit pas être barré.');
 
+$flagOutcome = $reflection->getMethod('determineFlagScoreOutcome');
+$flagOutcome->setAccessible(true);
+[$flagWinner, $flagWinnerName, $flagDraw] = $flagOutcome->invoke($server, $game, [
+    ['playerSlot' => 1, 'score' => 3],
+    ['playerSlot' => 2, 'score' => 5],
+]);
+outcome_assert($flagWinner === 20 && $flagWinnerName === 'Bob' && $flagDraw === false, 'Le meilleur score de drapeaux doit gagner une partie sécurisée.');
+[$flagWinner, $flagWinnerName, $flagDraw] = $flagOutcome->invoke($server, $game, [
+    ['playerSlot' => 1, 'score' => 4],
+    ['playerSlot' => 2, 'score' => 4],
+]);
+outcome_assert($flagWinner === null && $flagWinnerName === 'Egalité' && $flagDraw === true, 'Deux scores de drapeaux identiques doivent produire une égalité.');
+
+$elo = $reflection->getMethod('calculateEloChanges');
+$elo->setAccessible(true);
+$eloChanges = $elo->invoke($server, 1200, 1200, 1, 1, 2, false, 32);
+outcome_assert($eloChanges[1]['change'] === 16 && $eloChanges[2]['change'] === -16, 'Une victoire entre joueurs de même Elo doit transférer 16 points.');
+$eloDraw = $elo->invoke($server, 1400, 1200, null, 1, 2, true, 32);
+outcome_assert($eloDraw[1]['change'] < 0 && $eloDraw[2]['change'] > 0, 'Une égalité doit favoriser le joueur le moins bien classé.');
+
 $gamesProperty = $reflection->getProperty('games');
 $allSafe = $reflection->getMethod('allSafeCellsRevealed');
 $allSafe->setAccessible(true);
