@@ -4,6 +4,7 @@ set -euo pipefail
 if [[ ${EUID:-$(id -u)} -ne 0 ]]; then echo "Exécutez avec sudo." >&2; exit 1; fi
 project_dir=/var/www/demineur
 
+"$project_dir/scripts/generate-version.sh"
 "$project_dir/scripts/install-websocket-service.sh"
 
 if [[ -d "$project_dir/ia/deminium/plugins/Jimbo" ]]; then

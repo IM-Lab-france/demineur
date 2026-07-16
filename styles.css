@@ -1535,6 +1535,17 @@ body.game-active.chat-open #currentTurnDisplay {
     box-sizing:border-box;
 }
 body.game-active #homeStatusBar { display:none!important; }
+.app-version {
+    position: fixed;
+    right: 8px;
+    bottom: 6px;
+    z-index: 10;
+    color: rgba(255, 255, 255, .72);
+    font-size: .72rem;
+    line-height: 1;
+    pointer-events: none;
+}
+body.game-active .app-version { display: none; }
 @media (min-width:769px) {
     body.chat-open #homeStatusBar { right:clamp(320px,32vw,430px); }
 }

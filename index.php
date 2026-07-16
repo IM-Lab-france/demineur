@@ -6,6 +6,8 @@ if (!is_dir(__DIR__ . '/vendor')) {
     echo 'Application non installée. Exécutez la procédure CLI décrite dans README.md.';
     exit;
 }
+require_once __DIR__ . '/src/AppVersion.php';
+$appVersion = AppVersion::current(__DIR__);
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -256,6 +258,10 @@ if (!is_dir(__DIR__ . '/vendor')) {
 
     <!-- Icône du Point d'Interrogation -->
     <div id="helpIcon" class="help-icon hidden" role="button" aria-label="Afficher l'aide" tabindex="0">❓</div>
+
+    <footer class="app-version" aria-label="Version de l’application">
+        Version <?= htmlspecialchars($appVersion, ENT_QUOTES, 'UTF-8') ?>
+    </footer>
 
     <!-- jQuery, Popper.js, and Bootstrap JS -->
     <script defer src="/assets/vendor/jquery/jquery-3.5.1.slim.min.js"></script>
