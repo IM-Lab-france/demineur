@@ -333,6 +333,9 @@ class MinesweeperServer implements MessageComponentInterface {
                 $this->socialRepository->setRequestsEnabled((int) $this->players[$from->resourceId]['id'], !empty($data['friendRequestsEnabled']));
                 $this->sendSocialState($from);
                 break;
+            case 'set_language':
+                $this->handleLanguagePreference($from, $data);
+                break;
             case 'get_chat_state': $this->sendChatState($from); break;
             case 'open_direct_chat': $this->openDirectChat($from, $data); break;
             case 'get_chat_messages': $this->sendChatMessages($from, $data); break;
@@ -508,6 +511,22 @@ class MinesweeperServer implements MessageComponentInterface {
             'reason' => $message,
         ]);
         $connection->send(json_encode(['type' => 'error', 'message' => $message]));
+    }
+
+    protected function handleLanguagePreference(ConnectionInterface $connection, array $data): void {
+        $language = strtolower(trim((string) ($data['language'] ?? '')));
+        if (!in_array($language, ['fr', 'en', 'de', 'nl'], true)) {
+            $this->sendError($connection, 'Langue non prise en charge.');
+            return;
+        }
+        $userId = (int) ($this->players[$connection->resourceId]['id'] ?? 0);
+        if ($userId <= 0) {
+            $this->sendError($connection, 'Authentification requise.');
+            return;
+        }
+        $stmt = $this->db->getPDO()->prepare('UPDATE users SET preferred_language=:language WHERE id=:id');
+        $stmt->execute(['language' => $language, 'id' => $userId]);
+        $connection->send(json_encode(['type' => 'language_updated', 'language' => $language]));
     }
 
     protected function getValidatedGameAction(ConnectionInterface $from, array $data, $requireTurn = true) {
@@ -836,6 +855,7 @@ class MinesweeperServer implements MessageComponentInterface {
         $username = isset($data['username']) ? trim($data['username']) : '';
         $password = $data['password'] ?? '';
         $email = mb_strtolower(trim((string) ($data['email'] ?? '')), 'UTF-8');
+        $language = in_array(($data['language'] ?? null), ['fr', 'en', 'de', 'nl'], true) ? (string) $data['language'] : null;
 
         if (!preg_match('/^[\p{L}\p{N}_-]{3,32}$/u', $username)) {
             $from->send(json_encode(['type' => 'register_failed', 'message' => 'Le nom doit contenir 3 à 32 lettres, chiffres, tirets ou underscores.']));
@@ -881,13 +901,13 @@ class MinesweeperServer implements MessageComponentInterface {
     
             // Insérer le nouvel utilisateur dans la base de données
             $stmt = $db->getPDO()->prepare("
-                INSERT INTO users (username, email, email_verified_at, password_hash, created_at)
-                VALUES (:username, :email, NULL, :password_hash, NOW())
+                INSERT INTO users (username, email, email_verified_at, password_hash, preferred_language, created_at)
+                VALUES (:username, :email, NULL, :password_hash, :preferred_language, NOW())
             ");
             $registrationCommitted = false;
             try {
                 $db->getPDO()->beginTransaction();
-                $stmt->execute(['username' => $username, 'email' => $email, 'password_hash' => $passwordHash]);
+                $stmt->execute(['username' => $username, 'email' => $email, 'password_hash' => $passwordHash, 'preferred_language' => $language]);
                 $userId = (int) $db->getPDO()->lastInsertId();
                 $token = (new AccountTokenService($db->getPDO()))->issue($userId, 'verify_email', 86400);
                 $db->getPDO()->commit();
@@ -1000,6 +1020,7 @@ class MinesweeperServer implements MessageComponentInterface {
                 'playerId' => $user['id'],  // Envoi de l'ID du joueur
                 'username' => $username,
                 'sessionToken' => $sessionToken,
+                'language' => $user['preferred_language'] ?? null,
                 'sessionTransferred' => $existingResourceId !== null,
                 'players' => $this->getConnectedPlayers((int) $user['id'])
             ]));
@@ -1167,6 +1188,7 @@ class MinesweeperServer implements MessageComponentInterface {
             'playerId' => $session['id'],
             'username' => $session['username'],
             'sessionToken' => $token,
+            'language' => $session['preferred_language'] ?? null,
             'players' => $this->getConnectedPlayers((int) $session['id']),
         ]));
         if ($resumedGameId !== null && isset($this->games[$resumedGameId])) {

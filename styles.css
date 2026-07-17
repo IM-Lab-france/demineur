@@ -1595,6 +1595,20 @@ body.game-active #navbar { display:flex!important; }
 }
 #navbar .navbar-nav { flex-direction:column!important; align-items:stretch!important; }
 #navbar .nav-link { text-align:left; }
+.language-menu-item { padding:6px 8px; }
+.language-menu-label { display:block; margin:0 0 5px; color:#52606d; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+.language-choices { display:grid; grid-template-columns:repeat(4,40px); gap:5px; width:max-content; }
+.language-choices button { display:flex; align-items:center; justify-content:center; width:40px; height:36px; min-width:0; padding:4px; border:1px solid #b8c8d4; border-radius:4px; color:#173a54; background:#f4f8fb; }
+.language-choices button:hover { border-color:#39789e; background:#e5f1f7; }
+.language-choices button.active { color:#fff; border-color:#147d83; background:#147d83; box-shadow:inset 3px 0 #7de0df; }
+.language-choices button:disabled { opacity:.62; }
+.language-emoji { flex:0 0 24px; width:24px; height:24px; object-fit:contain; }
+.language-change-loader { position:fixed; z-index:2500; inset:0; display:none; align-items:center; justify-content:center; padding:20px; color:#fff; background:rgba(2,18,31,.82); backdrop-filter:blur(6px); }
+.i18n-loading { overflow:hidden; }
+.language-change-loader.show { display:flex; }
+.language-loader-card { display:flex; align-items:center; gap:14px; min-width:min(360px,calc(100vw - 40px)); padding:18px 22px; border:1px solid #527895; border-radius:6px; background:linear-gradient(135deg,#0b2d47,#176878); box-shadow:0 18px 50px rgba(0,0,0,.42); font-size:1.05rem; }
+.language-loader-spinner { width:28px; height:28px; flex:0 0 28px; border:3px solid rgba(255,255,255,.3); border-top-color:#7de0df; border-radius:50%; animation:languageLoaderSpin .72s linear infinite; }
+@keyframes languageLoaderSpin { to { transform:rotate(360deg); } }
 /* Garder le burger immobile quand le contenu du bandeau change en fin de partie. */
 body.game-active #navbar { height:56px!important; }
 body.game-active.chat-open #currentTurnDisplay {

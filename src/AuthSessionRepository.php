@@ -15,14 +15,14 @@ final class AuthSessionRepository {
 
     public function findValid(string $token): ?array {
         $stmt = $this->pdo->prepare(
-            'SELECT u.id, u.username, u.is_ai, u.is_disabled, u.email, u.email_verified_at, UNIX_TIMESTAMP(s.expires_at) AS expires_at '
+            'SELECT u.id, u.username, u.is_ai, u.is_disabled, u.email, u.email_verified_at, u.preferred_language, UNIX_TIMESTAMP(s.expires_at) AS expires_at '
             . 'FROM auth_sessions s JOIN users u ON u.id=s.user_id '
             . 'WHERE s.token_hash=:hash AND s.expires_at >= CURRENT_TIMESTAMP LIMIT 1'
         );
         $stmt->execute(['hash' => $this->hash($token)]);
         $session = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$session || !empty($session['is_disabled']) || (!empty($session['email']) && empty($session['email_verified_at']))) return null;
-        return ['id' => (int) $session['id'], 'username' => (string) $session['username'], 'is_ai' => (bool) $session['is_ai'], 'expires_at' => (int) $session['expires_at']];
+        return ['id' => (int) $session['id'], 'username' => (string) $session['username'], 'is_ai' => (bool) $session['is_ai'], 'preferred_language' => $session['preferred_language'] ?: null, 'expires_at' => (int) $session['expires_at']];
     }
 
     public function delete(string $token): void {

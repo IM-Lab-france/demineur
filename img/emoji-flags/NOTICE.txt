@@ -1,0 +1,2 @@
+Flag emoji artwork derived from Twemoji (https://github.com/jdecked/twemoji),
+licensed under CC-BY 4.0.

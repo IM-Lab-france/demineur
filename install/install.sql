@@ -20,6 +20,7 @@ CREATE TABLE `users` (
   `stats_reset_at` timestamp NULL DEFAULT NULL,
   `friend_requests_enabled` tinyint(1) NOT NULL DEFAULT '1',
   `ai_friend_policy` enum('manual','auto_accept','reject') NOT NULL DEFAULT 'manual',
+  `preferred_language` char(2) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username_UNIQUE` (`username`),
   UNIQUE KEY `uq_users_email` (`email`),

@@ -27,7 +27,7 @@ function closeAppDialog(value = appDialogCancelValue) {
     resolver?.(value);
 }
 
-function openAppDialog({ title, message, confirmLabel = 'Confirmer', input = false, initialValue = '', destructive = false }) {
+function openAppDialog({ title, message, confirmLabel, input = false, initialValue = '', destructive = false }) {
     closeAppDialog();
     const dialog = document.getElementById('appDialog');
     const card = dialog.querySelector('.app-dialog-card');
@@ -48,10 +48,10 @@ function openAppDialog({ title, message, confirmLabel = 'Confirmer', input = fal
     return new Promise(resolve => { appDialogResolver = resolve; });
 }
 
-window.appConfirm = (message, title = 'Confirmation', confirmLabel = 'Confirmer', destructive = false) =>
-    openAppDialog({ title, message, confirmLabel, destructive });
-window.appPrompt = (message, initialValue = '', title = 'Votre message') =>
-    openAppDialog({ title, message, confirmLabel: 'Envoyer', input: true, initialValue });
+window.appConfirm = (message, title = null, confirmLabel = null, destructive = false) =>
+    openAppDialog({ title: title || t('dialog.confirmation', {}, 'Confirmation'), message, confirmLabel: confirmLabel || t('common.confirm', {}, 'Confirmer'), destructive });
+window.appPrompt = (message, initialValue = '', title = null) =>
+    openAppDialog({ title: title || t('dialog.yourMessage', {}, 'Votre message'), message, confirmLabel: t('common.send', {}, 'Envoyer'), input: true, initialValue });
 
 document.getElementById('appDialogCancel').addEventListener('click', () => closeAppDialog());
 document.getElementById('appDialogConfirm').addEventListener('click', () => {
@@ -124,8 +124,22 @@ let isReconnecting = false;
 let logoutInProgress = false;
 let logoutFallbackTimeout;
 let touchActionMode = 'reveal';
+let languageUpdateResolver = null;
 const pendingActionTimers = new Map();
 const mobileGameQuery = window.matchMedia('(max-width: 768px), (pointer: coarse)');
+
+window.persistLanguagePreference = language => new Promise(resolve => {
+    if (!currentPlayerId || !socket || socket.readyState !== WebSocket.OPEN) {
+        resolve();
+        return;
+    }
+    languageUpdateResolver = resolve;
+    socket.send(JSON.stringify({ type: 'set_language', language }));
+    setTimeout(() => {
+        if (languageUpdateResolver === resolve) languageUpdateResolver = null;
+        resolve();
+    }, 2000);
+});
 
 let isMuted = false;
 
@@ -300,7 +314,7 @@ function connectWebSocket() {
     }
 
     socket.onopen = function() {
-        setConnectionStatus('Connecté', true);
+        setConnectionStatus(t('connection.connected', {}, 'Connecté'), true);
         console.log("WebSocket connecté : " + wsUrl);
         connected = true;
         logoutInProgress = false;
@@ -344,6 +358,14 @@ function connectWebSocket() {
             case 'login_success':
                 currentPlayerId = data.playerId; 
                 username = data.username;
+                if (data.language && data.language !== i18n.language) {
+                    i18n.rememberLanguage(data.language);
+                    window.location.reload();
+                    return;
+                }
+                if (!data.language && socket?.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ type: 'set_language', language: i18n.language }));
+                }
                 if (data.sessionToken) {
                     sessionStorage.setItem('minesweeperSessionToken', data.sessionToken);
                 }
@@ -361,6 +383,11 @@ function connectWebSocket() {
                 if (typeof window.requestChatState === 'function') window.requestChatState();
                 clearInterval(refreshInterval);
                 refreshInterval = setInterval(requestActiveGames, 5000);
+                break;
+
+            case 'language_updated':
+                languageUpdateResolver?.();
+                languageUpdateResolver = null;
                 break;
 
             case 'resume_failed':
@@ -409,7 +436,7 @@ function connectWebSocket() {
                 applyUiState('spectating');
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
-                document.getElementById('currentTurnText').textContent = `Observation : tour de ${data.currentPlayer}`;
+                setTurnMessage('game.observeTurn', { player: data.currentPlayer }, `Observation : tour de ${data.currentPlayer}`);
                 renderGameRelations(data.participants);
                 setTimeout(() => window.requestChatState?.(), 0);
                 break;
@@ -430,7 +457,7 @@ function connectWebSocket() {
 
                 // Afficher le joueur qui commence
                 currentPlayerDisplay = document.getElementById('currentTurnText');
-                currentPlayerDisplay.textContent = 'C\'est à ' + data.currentPlayer + ' de commencer.'; // Afficher qui commence
+                setTurnMessage('game.turnStart', { player: data.currentPlayer }, `C'est à ${data.currentPlayer} de commencer.`);
                 renderGameRelations(data.participants);
                 setTimeout(() => window.requestChatState?.(), 0);
 
@@ -450,7 +477,7 @@ function connectWebSocket() {
                 displayGameBoard(data.board);
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 currentPlayerDisplay = document.getElementById('currentTurnText');
-                currentPlayerDisplay.textContent = 'Partie reprise — tour actuel : ' + data.currentPlayer;
+                setTurnMessage('game.resumedTurn', { player: data.currentPlayer }, `Partie reprise — tour actuel : ${data.currentPlayer}`);
                 renderGameRelations(data.participants);
                 setTimeout(() => window.requestChatState?.(), 0);
                 showHelpIcon();
@@ -461,7 +488,7 @@ function connectWebSocket() {
                 updateGameStatus(data.board, data.mineCount, data.currentPlayer);
                 // Mettre à jour le nom du joueur dont c'est le tour
                 currentPlayerDisplay = document.getElementById('currentTurnText');
-                currentPlayerDisplay.textContent = (isSpectating ? 'Observation — tour de : ' : 'Tour actuel: ') + data.currentPlayer;
+                setTurnMessage(isSpectating ? 'game.observeTurn' : 'game.turn', { player: data.currentPlayer }, `Tour actuel : ${data.currentPlayer}`);
                 break;
 
             case 'invite':
@@ -499,17 +526,15 @@ function connectWebSocket() {
                 break;
             case 'game_cancelled':
                 applyUiState('game_over');
-                showWinnerModal(data.message || 'La partie a été quittée.', currentGameId);
+                showWinnerModal(t('game.cancelled', {}, data.message || 'La partie a été quittée.'), currentGameId);
                 break;
             case 'player_reconnecting':
                 applyUiState('opponent_reconnecting');
-                currentPlayerDisplay = document.getElementById('currentTurnText');
-                currentPlayerDisplay.textContent = data.message;
+                setTurnMessage('game.opponentReconnecting', {}, data.message);
                 break;
             case 'player_reconnected':
                 applyUiState(isSpectating ? 'spectating' : 'playing');
-                currentPlayerDisplay = document.getElementById('currentTurnText');
-                currentPlayerDisplay.textContent = data.message;
+                setTurnMessage('game.opponentReconnected', {}, data.message);
                 break;
             case 'logout_success':
                 clearTimeout(logoutFallbackTimeout);
@@ -544,7 +569,7 @@ function connectWebSocket() {
     // Gestion de la fermeture ou de l'erreur de connexion WebSocket
     socket.onerror = function() {
         clearPendingCells();
-        setConnectionStatus('Connexion interrompue', false);
+        setConnectionStatus(t('connection.interrupted', {}, 'Connexion interrompue'), false);
         logMessage('Impossible de se connecter au serveur WebSocket.');
         showConnectionError();
     };
@@ -556,7 +581,7 @@ function connectWebSocket() {
             handleLogoutSuccess();
             return;
         }
-        setConnectionStatus('Reconnexion…', false);
+        setConnectionStatus(t('connection.reconnecting', {}, 'Reconnexion…'), false);
         logMessage('Connexion WebSocket fermée.');
         connected = false; // Indiquer que le client est déconnecté
         uiStateBeforeConnectionLoss = currentUiState;
@@ -575,6 +600,13 @@ function setConnectionStatus(label, connected) {
     if (accessibleLabel) accessibleLabel.textContent = label;
     status.title = label;
     status.classList.toggle('connected', connected);
+}
+
+function setTurnMessage(key, params = {}, fallback = '') {
+    const element = document.getElementById('currentTurnText');
+    element.dataset.messageKey = key;
+    element.dataset.messageParams = JSON.stringify(params);
+    element.textContent = t(key, params, fallback);
 }
 
 
@@ -655,7 +687,7 @@ function refreshPlayersList(players) {
     if (filteredPlayers.length === 0) {
         // Si aucun autre joueur en ligne, afficher le message
         const li = document.createElement('li');
-        li.textContent = 'Aucun joueur en ligne';
+        li.textContent = t('lobby.none', {}, 'Aucun joueur en ligne');
         playersList.appendChild(li);
     } else {
         filteredPlayers.forEach(player => {
@@ -739,7 +771,7 @@ function socialActionButton(label, variant, callback) {
     button.type = 'button';
     button.className = `btn btn-sm ${variant}`;
     button.textContent = label;
-    const descriptions = { '🎮': 'Inviter à jouer', '🤝': 'Ajouter en ami', '👍': 'Accepter', '👎': 'Refuser', '❌': 'Retirer des amis', '🚫': 'Bloquer', '🔓': 'Débloquer' };
+    const descriptions = { '🎮': t('invite.send', {}, 'Inviter à jouer'), '🤝': t('social.add', {}, 'Ajouter en ami'), '👍': t('social.accept', {}, 'Accepter'), '👎': t('social.decline', {}, 'Refuser'), '❌': t('social.remove', {}, 'Retirer des amis'), '🚫': t('social.block', {}, 'Bloquer'), '🔓': t('social.unblock', {}, 'Débloquer') };
     if (descriptions[label]) { button.title = descriptions[label]; button.setAttribute('aria-label', descriptions[label]); }
     button.addEventListener('click', event => { event.stopPropagation(); callback(); });
     return button;
@@ -747,13 +779,13 @@ function socialActionButton(label, variant, callback) {
 
 async function socialAction(type, userId, confirmation = '') {
     const destructive = type === 'block_user' || type === 'remove_friend';
-    if (confirmation && !await window.appConfirm(confirmation, 'Confirmer cette action', destructive ? 'Confirmer' : 'Continuer', destructive)) return;
+    if (confirmation && !await window.appConfirm(confirmation, t('dialog.actionTitle', {}, 'Confirmer cette action'), destructive ? t('common.confirm', {}, 'Confirmer') : t('common.continue', {}, 'Continuer'), destructive)) return;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({ type, userId: Number(userId) }));
 }
 
 async function sendFriendRequest(player) {
-    const message = await window.appPrompt(`Message pour ${player.username} (facultatif, 300 caractères maximum)`, '', 'Demande d’amitié');
+    const message = await window.appPrompt(t('dialog.friendMessage', { username: player.username }, `Message pour ${player.username}`), '', t('dialog.friendRequest', {}, 'Demande d’amitié'));
     if (message === null) return;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({ type: 'send_friend_request', userId: Number(player.id), message: message.slice(0, 300) }));
@@ -818,23 +850,23 @@ function renderSocialState(state) {
         ...(friend.online ? [{ label: '🎮', variant: 'btn-outline-primary', callback: () => invitePlayer(friend.id) }] : []),
         { label: '❌', variant: 'btn-outline-secondary', callback: () => socialAction('remove_friend', friend.id, `Supprimer ${friend.username} de vos amis ?`) },
         { label: '🚫', variant: 'btn-outline-danger', callback: () => socialAction('block_user', friend.id, `Bloquer ${friend.username} ?`) },
-    ], friend.online ? 'En ligne' : `Hors ligne · dernière activité ${new Date(friend.last_active).toLocaleString('fr-FR')}`);
-    replaceSocialList('onlineFriends', friends.filter(friend => friend.online).map(friendRow), 'Aucun ami connecté.');
-    replaceSocialList('offlineFriends', friends.filter(friend => !friend.online).map(friendRow), 'Aucun ami hors ligne.');
+    ], friend.online ? t('social.onlineState', {}, 'En ligne') : t('social.offlineSince', { date: new Date(friend.last_active).toLocaleString(i18n.language) }, 'Hors ligne'));
+    replaceSocialList('onlineFriends', friends.filter(friend => friend.online).map(friendRow), t('social.noOnline', {}, 'Aucun ami connecté.'));
+    replaceSocialList('offlineFriends', friends.filter(friend => !friend.online).map(friendRow), t('social.noOffline', {}, 'Aucun ami hors ligne.'));
     replaceSocialList('incomingFriendRequests', (state.incoming || []).map(person => socialEntry(person, [
         { label: '👍', variant: 'btn-success', callback: () => socialAction('accept_friend_request', person.id) },
         { label: '👎', variant: 'btn-outline-secondary', callback: () => socialAction('decline_friend_request', person.id) },
         { label: '🚫', variant: 'btn-outline-danger', callback: () => socialAction('block_user', person.id, `Bloquer ${person.username} ?`) },
-    ], person.message || 'Demande d’amitié')), 'Aucune demande reçue.');
-    replaceSocialList('outgoingFriendRequests', (state.outgoing || []).map(person => socialEntry(person, [], person.message || 'En attente')), 'Aucune demande envoyée.');
+    ], person.message || t('social.request', {}, 'Demande d’amitié'))), t('social.noIncoming', {}, 'Aucune demande reçue.'));
+    replaceSocialList('outgoingFriendRequests', (state.outgoing || []).map(person => socialEntry(person, [], person.message || t('social.pending', {}, 'En attente'))), t('social.noOutgoing', {}, 'Aucune demande envoyée.'));
     replaceSocialList('blockedUsers', (state.blocked || []).map(person => socialEntry(person, [
         { label: '🔓', variant: 'btn-outline-primary', callback: () => socialAction('unblock_user', person.id) },
-    ], 'Bloqué')), 'Aucun joueur bloqué.');
+    ], t('social.blockedState', {}, 'Bloqué'))), t('social.noBlocked', {}, 'Aucun joueur bloqué.'));
     const notifications = state.notifications || [];
     replaceSocialList('socialNotifications', notifications.map(notification => socialEntry(
-        { username: notification.actor || 'Compte supprimé' }, [],
-        notification.type === 'friend_request' ? 'Nouvelle demande d’amitié' : notification.type === 'friend_accepted' ? 'Demande acceptée' : 'A supprimé votre amitié'
-    )), 'Aucune notification.');
+        { username: notification.actor || t('social.deletedAccount', {}, 'Compte supprimé') }, [],
+        notification.type === 'friend_request' ? t('social.newRequest', {}, 'Nouvelle demande d’amitié') : notification.type === 'friend_accepted' ? t('social.requestAccepted', {}, 'Demande acceptée') : t('social.friendRemoved', {}, 'A supprimé votre amitié')
+    )), t('social.noNotifications', {}, 'Aucune notification.'));
     const unread = notifications.filter(notification => !notification.read_at).length + (state.incoming || []).length;
     const badge = document.getElementById('socialBadge');
     badge.textContent = unread;
@@ -869,7 +901,7 @@ function renderPublicGames(games) {
     if (!Array.isArray(games) || games.length === 0) {
         const empty = document.createElement('li');
         empty.className = 'list-group-item text-muted';
-        empty.textContent = 'Aucune partie publique en cours';
+        empty.textContent = t('lobby.noPublicGames', {}, 'Aucune partie publique en cours');
         list.appendChild(empty);
         return;
     }
@@ -972,8 +1004,8 @@ function displayGameBoard(board, losingCell = null) {
                     // Vérifier si c'est la mine qui a provoqué la fin de la partie
                     if (losingCell && x == losingCell.x && y == losingCell.y) {
                         cellBack.classList.add('mine-triggered');
-                        cellBack.setAttribute('aria-label', 'Case ayant déclenché la défaite');
-                        cellBack.title = 'Clic ayant déclenché la défaite';
+                        cellBack.setAttribute('aria-label', t('game.losingCell', {}, 'Case ayant déclenché la défaite'));
+                        cellBack.title = t('game.losingCell', {}, 'Case ayant déclenché la défaite');
                     }
                 } else if (cell.adjacentMines > 0) {
                     cellBack.textContent = cell.adjacentMines; // Afficher le nombre de mines adjacentes
@@ -1105,9 +1137,9 @@ document.getElementById('flagModeBtn').addEventListener('click', () => setTouchA
 document.getElementById('forfeitGameBtn').addEventListener('click', async () => {
     if (!currentGameId || isSpectating || !socket || socket.readyState !== WebSocket.OPEN) return;
     const confirmed = await window.appConfirm(
-        'Cette action comptera comme une défaite et modifiera votre classement Elo.',
-        'Abandonner la partie ?',
-        'Abandonner',
+        t('dialog.forfeitMessage', {}, 'Cette action comptera comme une défaite et modifiera votre classement Elo.'),
+        t('dialog.forfeitTitle', {}, 'Abandonner la partie ?'),
+        t('dialog.forfeitConfirm', {}, 'Abandonner'),
         true
     );
     if (!confirmed || !currentGameId || isSpectating || !socket || socket.readyState !== WebSocket.OPEN) return;
@@ -1153,8 +1185,8 @@ function updateGameBoard(board) {
             }
             td.dataset.state = state;
             const description = cell.revealed
-                ? (cell.adjacentMines > 0 ? `${cell.adjacentMines} mine(s) à proximité` : 'Case vide révélée')
-                : (cell.flagged ? `Case marquée par le joueur ${Number(cell.flaggedBy) === 2 ? 2 : 1}` : 'Case masquée');
+                ? (cell.adjacentMines > 0 ? t('game.nearbyMines', { count: cell.adjacentMines }, `${cell.adjacentMines} mine(s)`) : t('game.emptyCell', {}, 'Case vide révélée'))
+                : (cell.flagged ? t('game.flaggedCell', { player: Number(cell.flaggedBy) === 2 ? 2 : 1 }, 'Case marquée') : t('game.hiddenCell', {}, 'Case masquée'));
             td.setAttribute('aria-label', `Case ligne ${x + 1}, colonne ${y + 1} : ${description}`);
         });
     });
@@ -1269,17 +1301,20 @@ function placeFlag(x, y) {
     }
 }
 
+let lastWinnerDisplay = null;
+
 // Afficher le modal du gagnant
 function showWinnerModal(winnerMessage, gameId, flagScores = [], eloChanges = []) {
+    lastWinnerDisplay = { winnerMessage, gameId, flagScores, eloChanges };
     currentGameId = gameId;
     const modal = document.getElementById('winnerModal');
     const message = document.getElementById('winnerMessage');
     if (winnerMessage.includes('égalité')) {
-        message.textContent = 'Égalité';
+        message.textContent = t('game.draw', {}, 'Égalité');
     } else if (winnerMessage.includes('gagné')) {
-        message.textContent = 'Victoire';
+        message.textContent = t('game.victory', {}, 'Victoire');
     } else if (winnerMessage.includes('perdu') || winnerMessage.includes('abandonné')) {
-        message.textContent = 'Défaite';
+        message.textContent = t('game.defeat', {}, 'Défaite');
     } else {
         message.textContent = winnerMessage;
     }
@@ -1296,7 +1331,7 @@ function showWinnerModal(winnerMessage, gameId, flagScores = [], eloChanges = []
             name.textContent = player.username;
             const flags = document.createElement('span');
             flags.className = 'winner-flag-details';
-            flags.textContent = `${player.score} pts · ✓ ${player.correctFlags} · ✕ ${player.incorrectFlags}`;
+            flags.textContent = t('game.points', { score: player.score, correct: player.correctFlags, incorrect: player.incorrectFlags }, `${player.score} pts`);
             summary.append(name, flags);
             line.appendChild(summary);
             scores.appendChild(line);
@@ -1311,7 +1346,7 @@ function showWinnerModal(winnerMessage, gameId, flagScores = [], eloChanges = []
             const elo = document.createElement('div');
             elo.className = `winner-elo-change ${Number(player.change) > 0 ? 'positive' : Number(player.change) < 0 ? 'negative' : 'neutral'}`;
             const eloValues = document.createElement('span');
-            eloValues.textContent = `Elo ${player.before} → ${player.after}`;
+            eloValues.textContent = t('game.elo', { before: player.before, after: player.after }, `Elo ${player.before} → ${player.after}`);
             const eloDelta = document.createElement('strong');
             eloDelta.textContent = `${sign}${player.change}`;
             elo.append(eloValues, eloDelta);
@@ -1330,7 +1365,7 @@ async function sendLogin(username, password) {
 
     if (!socket || socket.readyState !== WebSocket.OPEN) {
         loginError.textContent = 'Connexion au serveur indisponible. Veuillez patienter quelques secondes puis réessayer.';
-        setConnectionStatus('Connexion indisponible', false);
+        setConnectionStatus(t('connection.unavailable', {}, 'Connexion indisponible'), false);
         if (!isReconnecting) attemptReconnect();
         return false;
     }
@@ -1349,7 +1384,8 @@ async function sendRegister(username, email, password) {
         type: 'register',
         username: username,
         email: email,
-        password: password // Transporté uniquement via le WebSocket TLS en production
+        password: password, // Transporté uniquement via le WebSocket TLS en production
+        language: i18n.language
     }));
 }
 
@@ -1450,6 +1486,20 @@ navLinks.forEach((navLink) => {
 document.addEventListener('click', (event) => {
     if (!navbarCollapse.contains(event.target) && !navbarToggler.contains(event.target)) {
         hideMenu();
+    }
+});
+
+window.addEventListener('languagechange', () => {
+    const turnMessage = document.getElementById('currentTurnText');
+    if (turnMessage?.dataset.messageKey) {
+        let params = {};
+        try { params = JSON.parse(turnMessage.dataset.messageParams || '{}'); } catch (_) {}
+        turnMessage.textContent = t(turnMessage.dataset.messageKey, params, turnMessage.textContent);
+    }
+    requestSocialState();
+    requestActiveGames();
+    if (currentUiState === 'game_over' && lastWinnerDisplay) {
+        showWinnerModal(lastWinnerDisplay.winnerMessage, lastWinnerDisplay.gameId, lastWinnerDisplay.flagScores, lastWinnerDisplay.eloChanges);
     }
 });
 

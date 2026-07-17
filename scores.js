@@ -2,8 +2,16 @@ let socket;
 let logoutRequested = false;
 let logoutTimeout;
 let authenticatedUserId = null;
+let languageUpdateResolver = null;
 let lastScorePlayers = [];
 let scoreSocialState = { friends: [], blocked: [], incoming: [], outgoing: [] };
+
+window.persistLanguagePreference = language => new Promise(resolve => {
+    if (!authenticatedUserId || !socket || socket.readyState !== WebSocket.OPEN) return resolve();
+    languageUpdateResolver = resolve;
+    socket.send(JSON.stringify({ type: 'set_language', language }));
+    setTimeout(() => { if (languageUpdateResolver === resolve) languageUpdateResolver = null; resolve(); }, 2000);
+});
 
 window.onload = function() {
     connectWebSocket(); // Connexion WebSocket
@@ -53,10 +61,20 @@ function connectWebSocket() {
                 break;
             case 'login_success':
                 authenticatedUserId = Number(data.playerId);
+                if (data.language && data.language !== i18n.language) {
+                    i18n.rememberLanguage(data.language);
+                    window.location.reload();
+                    return;
+                }
+                if (!data.language) socket.send(JSON.stringify({ type: 'set_language', language: i18n.language }));
                 document.getElementById('navbarUserDisplay').textContent = data.username;
                 requestSocialState();
                 if (typeof window.requestChatState === 'function') window.requestChatState();
                 fetchPlayerScores();
+                break;
+            case 'language_updated':
+                languageUpdateResolver?.();
+                languageUpdateResolver = null;
                 break;
             case 'logout_success':
                 if (logoutRequested) finishLogout();
@@ -85,11 +103,11 @@ function connectWebSocket() {
 
     socket.onclose = function() {
         console.log('WebSocket fermé');
-        showScoresMessage('Connexion au serveur de scores impossible.');
+        showScoresMessage(t('scores.serverUnavailable', {}, 'Connexion au serveur de scores impossible.'));
     };
 
     socket.onerror = function() {
-        showScoresMessage('Erreur de connexion au serveur de scores.');
+        showScoresMessage(t('scores.serverUnavailable', {}, 'Erreur de connexion au serveur de scores.'));
     };
 }
 
@@ -131,6 +149,11 @@ document.addEventListener('visibilitychange', () => {
     if (!document.hidden && socket?.readyState === WebSocket.OPEN) fetchPlayerScores();
 });
 
+window.addEventListener('languagechange', () => {
+    if (lastScorePlayers.length) refreshScores(lastScorePlayers);
+    if (socket?.readyState === WebSocket.OPEN) fetchPlayerScores();
+});
+
 // Fonction pour afficher les scores des joueurs
 function refreshScores(players) {
     lastScorePlayers = Array.isArray(players) ? players : [];
@@ -138,7 +161,7 @@ function refreshScores(players) {
     scoresTable.innerHTML = ''; // Vider le tableau avant de l'actualiser
 
     if (!Array.isArray(players) || players.length === 0) {
-        showScoresMessage('Aucun score disponible.');
+        showScoresMessage(t('scores.none', {}, 'Aucun score disponible.'));
         return;
     }
 
