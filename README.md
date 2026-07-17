@@ -101,6 +101,15 @@ Les mots de passe sont demandés sans écho dans le terminal. Ils ne doivent pas
 sudo /var/www/demineur/scripts/finalize-upgrade.sh
 ```
 
+Pour actualiser automatiquement le numéro de version après chaque commit,
+merge, pull ou changement de branche, activer une fois les hooks versionnés :
+
+```bash
+/var/www/demineur/scripts/install-git-hooks.sh
+```
+
+Le fichier `.version` est alors régénéré depuis le commit Git courant.
+
 Cette commande applique les migrations, synchronise la configuration Apache/systemd, migre Jimbo vers JSON, redémarre les services et vérifie une sauvegarde puis sa restauration.
 
 Chaque administrateur peut activer son propre TOTP depuis `/admin/security.php`.
