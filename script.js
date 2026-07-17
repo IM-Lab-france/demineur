@@ -12,12 +12,70 @@ function setGameActive(active) {
     document.body.classList.toggle('game-active', Boolean(active));
 }
 
+let appDialogResolver = null;
+let appDialogCancelValue = false;
+let appDialogPreviousFocus = null;
+
+function closeAppDialog(value = appDialogCancelValue) {
+    const dialog = document.getElementById('appDialog');
+    if (!dialog || dialog.classList.contains('hidden')) return;
+    dialog.classList.add('hidden');
+    const resolver = appDialogResolver;
+    appDialogResolver = null;
+    appDialogPreviousFocus?.focus?.();
+    appDialogPreviousFocus = null;
+    resolver?.(value);
+}
+
+function openAppDialog({ title, message, confirmLabel = 'Confirmer', input = false, initialValue = '', destructive = false }) {
+    closeAppDialog();
+    const dialog = document.getElementById('appDialog');
+    const card = dialog.querySelector('.app-dialog-card');
+    const field = document.getElementById('appDialogInput');
+    document.getElementById('appDialogTitle').textContent = title;
+    document.getElementById('appDialogMessage').textContent = message;
+    const confirmButton = document.getElementById('appDialogConfirm');
+    confirmButton.textContent = confirmLabel;
+    confirmButton.className = `btn ${destructive ? 'btn-danger' : 'btn-primary'}`;
+    card.classList.toggle('destructive', destructive);
+    document.getElementById('appDialogIcon').textContent = destructive ? '!' : input ? '✉' : '✓';
+    field.classList.toggle('hidden', !input);
+    field.value = initialValue;
+    appDialogCancelValue = input ? null : false;
+    appDialogPreviousFocus = document.activeElement;
+    dialog.classList.remove('hidden');
+    setTimeout(() => (input ? field : document.getElementById('appDialogConfirm')).focus(), 0);
+    return new Promise(resolve => { appDialogResolver = resolve; });
+}
+
+window.appConfirm = (message, title = 'Confirmation', confirmLabel = 'Confirmer', destructive = false) =>
+    openAppDialog({ title, message, confirmLabel, destructive });
+window.appPrompt = (message, initialValue = '', title = 'Votre message') =>
+    openAppDialog({ title, message, confirmLabel: 'Envoyer', input: true, initialValue });
+
+document.getElementById('appDialogCancel').addEventListener('click', () => closeAppDialog());
+document.getElementById('appDialogConfirm').addEventListener('click', () => {
+    const field = document.getElementById('appDialogInput');
+    closeAppDialog(field.classList.contains('hidden') ? true : field.value);
+});
+document.getElementById('appDialog').addEventListener('click', event => {
+    if (event.target === event.currentTarget) closeAppDialog();
+});
+document.getElementById('appDialog').addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeAppDialog();
+    if (event.key === 'Enter' && !event.shiftKey && event.target.id !== 'appDialogInput') {
+        event.preventDefault();
+        document.getElementById('appDialogConfirm').click();
+    }
+});
+
 const GAME_UI_STATES = new Set(['playing', 'opponent_reconnecting', 'reconnecting', 'spectating', 'game_over']);
 let currentUiState = 'logged_out';
 let uiStateBeforeConnectionLoss = 'logged_out';
 let resumingSession = false;
 
 function applyUiState(state) {
+    if (state !== currentUiState) closeAppDialog();
     currentUiState = state;
     const authenticated = state !== 'logged_out';
     const gameVisible = GAME_UI_STATES.has(state);
@@ -50,21 +108,6 @@ function applyUiState(state) {
     document.getElementById('flagModeBtn')?.toggleAttribute('disabled', paused || spectator);
 }
 
-function syncGameStatusBarHeight() {
-    const statusBar = document.getElementById('currentTurnDisplay');
-    if (!statusBar) return;
-    const height = Math.ceil(statusBar.getBoundingClientRect().height);
-    if (height >= 40) {
-        document.documentElement.style.setProperty('--game-status-height', `${height}px`);
-    }
-}
-
-const observedGameStatusBar = document.getElementById('currentTurnDisplay');
-if (observedGameStatusBar && typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(syncGameStatusBarHeight).observe(observedGameStatusBar);
-}
-window.addEventListener('resize', syncGameStatusBarHeight);
-syncGameStatusBarHeight();
 let username;
 let currentGameId;
 let refreshInterval;
@@ -702,14 +745,17 @@ function socialActionButton(label, variant, callback) {
     return button;
 }
 
-function socialAction(type, userId, confirmation = '') {
-    if (confirmation && !window.confirm(confirmation)) return;
+async function socialAction(type, userId, confirmation = '') {
+    const destructive = type === 'block_user' || type === 'remove_friend';
+    if (confirmation && !await window.appConfirm(confirmation, 'Confirmer cette action', destructive ? 'Confirmer' : 'Continuer', destructive)) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({ type, userId: Number(userId) }));
 }
 
-function sendFriendRequest(player) {
-    const message = window.prompt(`Message pour ${player.username} (facultatif, 300 caractères maximum)`, '');
+async function sendFriendRequest(player) {
+    const message = await window.appPrompt(`Message pour ${player.username} (facultatif, 300 caractères maximum)`, '', 'Demande d’amitié');
     if (message === null) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({ type: 'send_friend_request', userId: Number(player.id), message: message.slice(0, 300) }));
 }
 
@@ -1056,9 +1102,15 @@ function setTouchActionMode(mode) {
 
 document.getElementById('revealModeBtn').addEventListener('click', () => setTouchActionMode('reveal'));
 document.getElementById('flagModeBtn').addEventListener('click', () => setTouchActionMode('flag'));
-document.getElementById('forfeitGameBtn').addEventListener('click', () => {
+document.getElementById('forfeitGameBtn').addEventListener('click', async () => {
     if (!currentGameId || isSpectating || !socket || socket.readyState !== WebSocket.OPEN) return;
-    if (!window.confirm('Abandonner cette partie ? Cela comptera comme une défaite et modifiera votre classement Elo.')) return;
+    const confirmed = await window.appConfirm(
+        'Cette action comptera comme une défaite et modifiera votre classement Elo.',
+        'Abandonner la partie ?',
+        'Abandonner',
+        true
+    );
+    if (!confirmed || !currentGameId || isSpectating || !socket || socket.readyState !== WebSocket.OPEN) return;
     const button = document.getElementById('forfeitGameBtn');
     button.disabled = true;
     socket.send(JSON.stringify({ type: 'forfeit_game', game_id: currentGameId }));
@@ -1222,25 +1274,48 @@ function showWinnerModal(winnerMessage, gameId, flagScores = [], eloChanges = []
     currentGameId = gameId;
     const modal = document.getElementById('winnerModal');
     const message = document.getElementById('winnerMessage');
-    message.textContent = winnerMessage;
+    if (winnerMessage.includes('égalité')) {
+        message.textContent = 'Égalité';
+    } else if (winnerMessage.includes('gagné')) {
+        message.textContent = 'Victoire';
+    } else if (winnerMessage.includes('perdu') || winnerMessage.includes('abandonné')) {
+        message.textContent = 'Défaite';
+    } else {
+        message.textContent = winnerMessage;
+    }
     const scores = document.getElementById('winnerFlagScores');
     scores.textContent = '';
+    const playerLines = new Map();
     if (Array.isArray(flagScores)) {
         flagScores.forEach(player => {
-            const line = document.createElement('p');
+            const line = document.createElement('div');
             line.className = `winner-flag-score flag-player-${Number(player.playerSlot) === 2 ? 2 : 1}`;
-            line.textContent = `${player.username} : ${player.score} point${Math.abs(player.score) > 1 ? 's' : ''} (${player.correctFlags} correct${player.correctFlags > 1 ? 's' : ''}, ${player.incorrectFlags} incorrect${player.incorrectFlags > 1 ? 's' : ''})`;
+            const summary = document.createElement('div');
+            summary.className = 'winner-player-summary';
+            const name = document.createElement('strong');
+            name.textContent = player.username;
+            const flags = document.createElement('span');
+            flags.className = 'winner-flag-details';
+            flags.textContent = `${player.score} pts · ✓ ${player.correctFlags} · ✕ ${player.incorrectFlags}`;
+            summary.append(name, flags);
+            line.appendChild(summary);
             scores.appendChild(line);
+            playerLines.set(player.username, line);
         });
     }
     if (Array.isArray(eloChanges)) {
         eloChanges.forEach(player => {
-            const line = Array.from(scores.querySelectorAll('.winner-flag-score'))
-                .find(element => element.textContent.startsWith(`${player.username} :`));
+            const line = playerLines.get(player.username);
             if (!line) return;
             const sign = Number(player.change) >= 0 ? '+' : '';
-            line.append(document.createElement('br'));
-            line.append(document.createTextNode(`Elo ${player.before} → ${player.after} (${sign}${player.change})`));
+            const elo = document.createElement('div');
+            elo.className = `winner-elo-change ${Number(player.change) > 0 ? 'positive' : Number(player.change) < 0 ? 'negative' : 'neutral'}`;
+            const eloValues = document.createElement('span');
+            eloValues.textContent = `Elo ${player.before} → ${player.after}`;
+            const eloDelta = document.createElement('strong');
+            eloDelta.textContent = `${sign}${player.change}`;
+            elo.append(eloValues, eloDelta);
+            line.appendChild(elo);
         });
     }
     setElementDisplay(modal, 'flex');

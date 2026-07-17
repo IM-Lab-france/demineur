@@ -16,7 +16,7 @@
     }
     const escapeLink = text => {
         const fragment=document.createDocumentFragment(); const parts=String(text).split(/(https:\/\/[^\s]+)/g);
-        parts.forEach(part=>{if(/^https:\/\//.test(part)){const a=document.createElement('a');a.href=part;a.target='_blank';a.rel='noopener noreferrer';a.textContent=part;a.onclick=e=>{if(!confirm('Ouvrir ce lien externe ?'))e.preventDefault();};fragment.appendChild(a);}else fragment.appendChild(document.createTextNode(part));});return fragment;
+        parts.forEach(part=>{if(/^https:\/\//.test(part)){const a=document.createElement('a');a.href=part;a.target='_blank';a.rel='noopener noreferrer';a.textContent=part;a.onclick=async e=>{e.preventDefault();if(await window.appConfirm('Ouvrir ce lien dans un nouvel onglet ?', 'Lien externe', 'Ouvrir'))window.open(part,'_blank','noopener,noreferrer');};fragment.appendChild(a);}else fragment.appendChild(document.createTextNode(part));});return fragment;
     };
     function renderConversations() {
         const root=$('chatConversations'); root.textContent=''; let unread=0;
@@ -47,7 +47,7 @@
     };
     $('chatToggle')?.addEventListener('click',()=>{setOpen(!$('chatWindow').classList.contains('open'));requestChatState();});$('chatClose')?.addEventListener('click',()=>setOpen(false));$('chatMinimize')?.addEventListener('click',()=>{if(typeof currentGameId!=='undefined'&&currentGameId)return;const minimized=$('chatWindow').classList.toggle('minimized');document.body.classList.toggle('chat-open',!minimized);});
     $('chatMute')?.addEventListener('click',()=>{if(!active)return;const conversation=conversations.find(c=>Number(c.id)===active);const muted=!Number(conversation?.muted);send({type:'set_chat_muted',conversationId:active,muted});$('chatMute').textContent=muted?'🔕':'🔔';});
-    $('chatHide')?.addEventListener('click',()=>{if(active&&confirm('Supprimer cette conversation de votre liste ?')){send({type:'hide_chat_conversation',conversationId:active});active=null;messages=[];renderMessages();$('chatTitle').textContent='Choisissez une conversation';}});
+    $('chatHide')?.addEventListener('click',async()=>{if(active&&await window.appConfirm('Supprimer cette conversation de votre liste ?', 'Masquer la conversation', 'Supprimer', true)){send({type:'hide_chat_conversation',conversationId:active});active=null;messages=[];renderMessages();$('chatTitle').textContent='Choisissez une conversation';}});
     $('chatForm')?.addEventListener('submit',e=>{e.preventDefault();const input=$('chatInput');if(!active||!input.value.trim())return;send({type:'send_chat_message',conversationId:active,message:input.value});input.value='';send({type:'chat_typing',conversationId:active,typing:false});});
     $('chatInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('chatForm').requestSubmit();}});$('chatInput')?.addEventListener('input',()=>{if(!active)return;send({type:'chat_typing',conversationId:active,typing:true});clearTimeout(typingTimer);typingTimer=setTimeout(()=>send({type:'chat_typing',conversationId:active,typing:false}),1200);});
     addEventListener('resize',positionChat);

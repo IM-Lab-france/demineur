@@ -75,7 +75,11 @@ $appVersion = AppVersion::current(__DIR__);
 
     <!-- Aide Overlay -->
     <div id="connectionStatus" class="connection-status" role="status" aria-live="polite" title="Connexion…">
+        <span class="connection-status-dot" aria-hidden="true"></span>
         <span class="connection-status-label sr-only">Connexion…</span>
+        <span class="connection-status-version" aria-label="Version de l’application">
+            Version <?= htmlspecialchars($appVersion, ENT_QUOTES, 'UTF-8') ?>
+        </span>
     </div>
     <div id="helpOverlay" class="help-overlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
         <div class="help-content">
@@ -175,7 +179,6 @@ $appVersion = AppVersion::current(__DIR__);
         <div id="gameContainer">
             <div id="gameStatus" aria-live="polite">
                 <div id="currentTurnDisplay">
-                    <div id="currentTurnText"></div>
                     <div id="gameRelations" class="game-relations" aria-label="Relations avec les participants"></div>
                     <div id="gameCounters">
                         <span class="game-counter mine-counter" aria-label="Nombre total de mines">
@@ -194,12 +197,15 @@ $appVersion = AppVersion::current(__DIR__);
                             <strong id="flagCounterPlayer2">0</strong>
                         </span>
                     </div>
-                    <button id="forfeitGameBtn" class="btn btn-sm btn-outline-light" type="button" title="Abandonner la partie">🏳️ <span>Abandonner</span></button>
                 </div>
             </div>
-            <div id="plateau">
-                <div id="gameBoard"></div> <!-- Plateau de jeu -->
+            <div id="boardFrame" class="board-frame">
+                <div id="plateau">
+                    <div id="gameBoard"></div> <!-- Plateau de jeu -->
+                </div>
+                <button id="forfeitGameBtn" class="board-forfeit-button" type="button" title="Abandonner la partie" aria-label="Abandonner la partie">🏳️</button>
             </div>
+            <div id="currentTurnText" class="game-turn-message" aria-live="polite"></div>
             <div id="touchActions" class="touch-actions" role="group" aria-label="Action appliquée au prochain toucher">
                 <button id="revealModeBtn" class="touch-action active" type="button" aria-pressed="true">👆 Révéler</button>
                 <button id="flagModeBtn" class="touch-action" type="button" aria-pressed="false">🚩 Drapeau</button>
@@ -218,6 +224,21 @@ $appVersion = AppVersion::current(__DIR__);
     </div>
 
     <div id="notYourTurnPopup" class="popup">Ce n'est pas à vous de jouer</div>
+
+    <div id="appDialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="appDialogTitle" aria-describedby="appDialogMessage">
+        <div class="app-dialog-card">
+            <header class="app-dialog-heading">
+                <span id="appDialogIcon" class="app-dialog-icon" aria-hidden="true">?</span>
+                <h2 id="appDialogTitle">Confirmation</h2>
+            </header>
+            <p id="appDialogMessage"></p>
+            <textarea id="appDialogInput" class="form-control hidden" rows="3" maxlength="300"></textarea>
+            <div class="app-dialog-actions">
+                <button id="appDialogCancel" class="btn btn-outline-secondary" type="button">Annuler</button>
+                <button id="appDialogConfirm" class="btn btn-primary" type="button">Confirmer</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Div pour afficher les messages WebSocket -->
     <div id="messages" class="container-fluid"></div>
@@ -258,10 +279,6 @@ $appVersion = AppVersion::current(__DIR__);
 
     <!-- Icône du Point d'Interrogation -->
     <div id="helpIcon" class="help-icon hidden" role="button" aria-label="Afficher l'aide" tabindex="0">❓</div>
-
-    <footer class="app-version" aria-label="Version de l’application">
-        Version <?= htmlspecialchars($appVersion, ENT_QUOTES, 'UTF-8') ?>
-    </footer>
 
     <!-- jQuery, Popper.js, and Bootstrap JS -->
     <script defer src="/assets/vendor/jquery/jquery-3.5.1.slim.min.js"></script>
