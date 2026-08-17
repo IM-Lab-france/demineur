@@ -157,8 +157,18 @@ class MinesweeperServer implements MessageComponentInterface {
             'php_version' => PHP_VERSION,
             'pid' => getmypid(),
         ]);
-        
+    }
 
+    public function startPeriodicSessionValidation(\React\EventLoop\LoopInterface $loop): void {
+        // IoServer::factory crée sa propre boucle : le timer doit impérativement
+        // être attaché à celle-ci, après la construction du serveur Ratchet.
+        $loop->addPeriodicTimer(2, function (): void {
+            foreach ($this->clients as $client) {
+                if (isset($this->players[$client->resourceId])) {
+                    $this->isAuthenticated($client, true);
+                }
+            }
+        });
     }
 
     public function onOpen(ConnectionInterface $conn) {
@@ -480,11 +490,11 @@ class MinesweeperServer implements MessageComponentInterface {
         $from->close();
     }
 
-    protected function isAuthenticated(ConnectionInterface $connection) {
+    protected function isAuthenticated(ConnectionInterface $connection, bool $forceValidation = false) {
         $player = $this->players[$connection->resourceId] ?? null;
         if (!$player) return false;
         $lastValidation = $this->sessionValidationTimes[$connection->resourceId] ?? 0;
-        if (time() - $lastValidation < 15) return true;
+        if (!$forceValidation && time() - $lastValidation < 15) return true;
         $token = $player['session_token'] ?? '';
         try {
             if (!is_string($token) || !$this->authSessionRepository->findValid($token)) {
@@ -2601,8 +2611,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
         'log_path' => $logFilePath,
     ]);
     try {
-        $component = new LoggedOriginCheck(new WsServer(new MinesweeperServer($logger)), $allowedOrigins, $logger);
+        $gameServer = new MinesweeperServer($logger);
+        $component = new LoggedOriginCheck(new WsServer($gameServer), $allowedOrigins, $logger);
         $server = IoServer::factory(new HttpServer($component), $port, $host);
+        $gameServer->startPeriodicSessionValidation($server->loop);
         $logger->info('Backend WebSocket prêt et en écoute.', ['host' => $host, 'port' => $port]);
         $server->run();
     } catch (Throwable $e) {

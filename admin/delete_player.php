@@ -16,22 +16,6 @@ if ($playerId === false || $confirmation === '') {
     exit;
 }
 
-function control_websocket_service(string $action): bool {
-    $output = [];
-    exec('/usr/bin/sudo -n /usr/bin/systemctl ' . $action . ' minesweeper-websocket.service 2>&1', $output, $code);
-    return $code === 0;
-}
-
-$serviceState = trim((string) shell_exec('/usr/bin/systemctl is-active minesweeper-websocket.service 2>/dev/null'));
-$restartService = in_array($serviceState, ['active', 'activating', 'reloading'], true);
-$mustStopService = !in_array($serviceState, ['inactive', 'failed'], true);
-if ($mustStopService && !control_websocket_service('stop')) {
-    http_response_code(503);
-    echo json_encode(['success' => false, 'message' => 'Impossible d’arrêter temporairement le serveur WebSocket.']);
-    exit;
-}
-$serviceRestarted = false;
-
 try {
     $pdo = (new Database())->getPDO();
     $pdo->beginTransaction();
@@ -71,24 +55,15 @@ try {
     if ($delete->rowCount() !== 1) throw new RuntimeException('Le compte n’a pas pu être supprimé.');
 
     $pdo->commit();
-    if ($restartService) $serviceRestarted = control_websocket_service('start');
     error_log(sprintf('admin_audit action=delete_player admin=%s player=%d username=%s', $_SESSION['admin_username'], $playerId, $account['username']));
-    $message = 'Le compte et toutes ses données ont été supprimés.';
-    if ($restartService && !$serviceRestarted) $message .= ' Le serveur WebSocket doit être redémarré manuellement.';
-    echo json_encode(['success' => true, 'message' => $message, 'serverRestarted' => !$restartService || $serviceRestarted]);
+    echo json_encode(['success' => true, 'message' => 'Le compte et toutes ses données ont été supprimés. Ses connexions seront fermées automatiquement.']);
 } catch (InvalidArgumentException $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
-    if ($restartService) $serviceRestarted = control_websocket_service('start');
     http_response_code(422);
-    $message = $e->getMessage();
-    if ($restartService && !$serviceRestarted) $message .= ' Le serveur WebSocket doit être redémarré manuellement.';
-    echo json_encode(['success' => false, 'message' => $message]);
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
-    if ($restartService) $serviceRestarted = control_websocket_service('start');
     error_log('admin_audit action=delete_player_failed error=' . get_class($e));
     http_response_code(500);
-    $message = 'La suppression complète du compte a échoué. Aucune donnée n’a été supprimée.';
-    if ($restartService && !$serviceRestarted) $message .= ' Le serveur WebSocket doit être redémarré manuellement.';
-    echo json_encode(['success' => false, 'message' => $message]);
+    echo json_encode(['success' => false, 'message' => 'La suppression complète du compte a échoué. Aucune donnée n’a été supprimée.']);
 }
