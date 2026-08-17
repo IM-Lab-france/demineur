@@ -2,6 +2,7 @@ Options -Indexes
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteRule ^tests(?:/|$) - [F,L]
     RewriteRule "(^|/)\." - [F,L]
 </IfModule>
 

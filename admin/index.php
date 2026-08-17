@@ -167,7 +167,7 @@ try {
         <div class="card-body">
             <h2 class="h4">Gestion des comptes</h2>
             <p class="text-muted">La suppression efface définitivement le compte, ses sessions, ses e-mails en attente et tout son historique de jeu.</p>
-            <div class="alert alert-warning py-2">La suppression redémarre brièvement le serveur et déconnecte les joueurs. Les administrateurs et les IA se gèrent depuis leurs interfaces dédiées.</div>
+            <div class="alert alert-warning py-2">La suppression ferme uniquement les connexions du joueur concerné. Les administrateurs et les IA se gèrent depuis leurs interfaces dédiées.</div>
             <?php if (!$playerBlockingAvailable): ?>
                 <div class="alert alert-warning">Appliquez la migration <code>install/migrations/20260715_admin_players.sql</code> pour activer cette fonction.</div>
             <?php else: ?>

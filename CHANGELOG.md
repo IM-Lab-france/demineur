@@ -35,6 +35,8 @@
 
 ### Changed
 
+- Deleting a player now revokes only that player's WebSocket connections instead of restarting the server and disconnecting everyone.
+- AI instances left running are now enabled persistently and restarted after the WebSocket service or host restarts; explicitly stopped instances remain stopped.
 - Safe-board completion is now decided by flag score; equal scores remain a draw.
 - Players can only remove flags they placed themselves.
 - Moved administration and AI-management JavaScript into local static files.

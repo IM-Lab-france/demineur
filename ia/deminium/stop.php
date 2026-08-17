@@ -11,8 +11,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pidFile = $iaPath . '/pid';
     $unit = 'minesweeper-ai@' . $iaName . '.service';
     exec('/usr/bin/systemctl is-active ' . escapeshellarg($unit) . ' 2>/dev/null', $state, $stateCode);
-    if ($stateCode === 0 && trim(implode('', $state)) === 'active') {
-        exec('/usr/bin/sudo -n /usr/bin/systemctl stop ' . escapeshellarg($unit) . ' 2>&1', $output, $code);
+    exec('/usr/bin/systemctl is-enabled ' . escapeshellarg($unit) . ' 2>/dev/null', $enabledState, $enabledCode);
+    $serviceActive = $stateCode === 0 && trim(implode('', $state)) === 'active';
+    $serviceEnabled = $enabledCode === 0 && str_starts_with(trim(implode('', $enabledState)), 'enabled');
+    if ($serviceActive || $serviceEnabled) {
+        // Une demande d'arrêt explicite retire aussi le démarrage automatique.
+        exec('/usr/bin/sudo -n /usr/bin/systemctl disable --now ' . escapeshellarg($unit) . ' 2>&1', $output, $code);
         if ($code === 0) {
             @unlink($pidFile);
             echo json_encode(['success' => true, 'message' => 'Service IA arrêté.']);

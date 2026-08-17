@@ -27,6 +27,7 @@ backup_verify_service_source="$project_dir/deploy/systemd/minesweeper-backup-ver
 backup_verify_timer_source="$project_dir/deploy/systemd/minesweeper-backup-verify.timer"
 backup_admin_service_source="$project_dir/deploy/systemd/minesweeper-backup-admin.service"
 ai_service_source="$project_dir/deploy/systemd/minesweeper-ai@.service"
+ai_restore_service_source="$project_dir/deploy/systemd/minesweeper-ai-restore.service"
 health_service_source="$project_dir/deploy/systemd/minesweeper-health.service"
 health_timer_source="$project_dir/deploy/systemd/minesweeper-health.timer"
 mail_service_source="$project_dir/deploy/systemd/minesweeper-mail.service"
@@ -36,6 +37,7 @@ mail_timer_source="$project_dir/deploy/systemd/minesweeper-mail.timer"
 [[ -f "$config_env" ]] || { echo "Configuration absente dans $secure_dir" >&2; exit 1; }
 [[ -f "$apache_proxy_source" ]] || { echo "Configuration Apache absente: $apache_proxy_source" >&2; exit 1; }
 [[ -f "$apache_security_source" ]] || { echo "Configuration de sécurité Apache absente: $apache_security_source" >&2; exit 1; }
+[[ -f "$ai_restore_service_source" ]] || { echo "Unité absente: $ai_restore_service_source" >&2; exit 1; }
 
 if ! id minesweeper >/dev/null 2>&1; then
     useradd --system --home-dir "$project_dir" --shell /usr/sbin/nologin minesweeper
@@ -124,11 +126,13 @@ install -o root -g root -m 0644 "$health_timer_source" /etc/systemd/system/mines
 install -o root -g root -m 0644 "$mail_service_source" /etc/systemd/system/minesweeper-mail.service
 install -o root -g root -m 0644 "$mail_timer_source" /etc/systemd/system/minesweeper-mail.timer
 install -o root -g root -m 0644 "$ai_service_source" /etc/systemd/system/minesweeper-ai@.service
+install -o root -g root -m 0644 "$ai_restore_service_source" /etc/systemd/system/minesweeper-ai-restore.service
+chmod 0755 "$project_dir/scripts/restart-enabled-ai.sh"
 
 sudoers_tmp=$(mktemp)
 trap 'rm -f "$sudoers_tmp"' EXIT
 cat >"$sudoers_tmp" <<'EOF'
-www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start minesweeper-websocket.service, /usr/bin/systemctl stop minesweeper-websocket.service, /usr/bin/systemctl start minesweeper-ai@*.service, /usr/bin/systemctl stop minesweeper-ai@*.service, /usr/bin/systemctl start --no-block minesweeper-backup-admin.service
+www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start minesweeper-websocket.service, /usr/bin/systemctl stop minesweeper-websocket.service, /usr/bin/systemctl enable --now minesweeper-ai@*.service, /usr/bin/systemctl disable --now minesweeper-ai@*.service, /usr/bin/systemctl start --no-block minesweeper-backup-admin.service
 EOF
 visudo -cf "$sudoers_tmp"
 install -o root -g root -m 0440 "$sudoers_tmp" "$sudoers_target"

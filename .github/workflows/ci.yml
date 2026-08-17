@@ -42,13 +42,13 @@ jobs:
       MAIL_FROM_NAME: Demineur CI
       APP_PUBLIC_URL: http://127.0.0.1:8099
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           coverage: none
           extensions: gd, mbstring, pdo_mysql
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
       - run: composer install --no-interaction --prefer-dist
@@ -69,9 +69,28 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npx playwright install --with-deps chromium
-      - run: php server.php > /tmp/minesweeper-e2e.log 2>&1 &
+      - name: Run end-to-end tests
+        run: |
+          php server.php > /tmp/minesweeper-e2e.log 2>&1 &
+          websocket_pid=$!
+          trap 'kill "$websocket_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in $(seq 1 30); do
+            if php -r '$socket=@fsockopen("127.0.0.1",8080,$errno,$error,0.2); if(!$socket) exit(1); fclose($socket);'; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != true ]]; then
+            cat /tmp/minesweeper-e2e.log
+            exit 1
+          fi
+          if ! npm run test:e2e; then
+            cat /tmp/minesweeper-e2e.log
+            exit 1
+          fi
         env:
           WS_HOST: 127.0.0.1
           WS_PORT: 8080
           WS_ALLOWED_ORIGINS: localhost,127.0.0.1
-      - run: npm run test:e2e

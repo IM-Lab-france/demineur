@@ -327,7 +327,7 @@ $(document).ready(function(){
     $('.delete-player').click(function() {
         const button = $(this);
         const username = String(button.data('username'));
-        const confirmation = window.prompt(`Cette action est définitive, supprimera toutes les données de ${username} et redémarrera brièvement le serveur.\n\nPour confirmer, saisissez exactement : ${username}`);
+        const confirmation = window.prompt(`Cette action est définitive et supprimera toutes les données de ${username}. Seules ses connexions seront fermées.\n\nPour confirmer, saisissez exactement : ${username}`);
         if (confirmation === null) return;
         if (confirmation !== username) {
             showMessage('warning', 'Le nom saisi ne correspond pas. Suppression annulée.');

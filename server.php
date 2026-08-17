@@ -157,8 +157,18 @@ class MinesweeperServer implements MessageComponentInterface {
             'php_version' => PHP_VERSION,
             'pid' => getmypid(),
         ]);
-        
+    }
 
+    public function startPeriodicSessionValidation(\React\EventLoop\LoopInterface $loop): void {
+        // IoServer::factory crée sa propre boucle : le timer doit impérativement
+        // être attaché à celle-ci, après la construction du serveur Ratchet.
+        $loop->addPeriodicTimer(2, function (): void {
+            foreach ($this->clients as $client) {
+                if (isset($this->players[$client->resourceId])) {
+                    $this->isAuthenticated($client, true);
+                }
+            }
+        });
     }
 
     public function onOpen(ConnectionInterface $conn) {
@@ -480,11 +490,11 @@ class MinesweeperServer implements MessageComponentInterface {
         $from->close();
     }
 
-    protected function isAuthenticated(ConnectionInterface $connection) {
+    protected function isAuthenticated(ConnectionInterface $connection, bool $forceValidation = false) {
         $player = $this->players[$connection->resourceId] ?? null;
         if (!$player) return false;
         $lastValidation = $this->sessionValidationTimes[$connection->resourceId] ?? 0;
-        if (time() - $lastValidation < 15) return true;
+        if (!$forceValidation && time() - $lastValidation < 15) return true;
         $token = $player['session_token'] ?? '';
         try {
             if (!is_string($token) || !$this->authSessionRepository->findValid($token)) {
@@ -2363,10 +2373,14 @@ class MinesweeperServer implements MessageComponentInterface {
     }
 
     protected function broadcastConnectedPlayersList(int $sourceConnectionId): void {
+        $recipientCount = 0;
+        $maximumPlayerCount = 0;
         foreach ($this->clients as $client) {
             if (!$this->isAuthenticated($client)) continue;
             $viewerId = (int) ($this->players[$client->resourceId]['id'] ?? 0);
             $playersList = $this->getConnectedPlayers($viewerId);
+            $recipientCount++;
+            $maximumPlayerCount = max($maximumPlayerCount, count($playersList));
             $client->send(json_encode([
                 'type' => 'connected_players',
                 'playerId' => $sourceConnectionId,
@@ -2376,7 +2390,8 @@ class MinesweeperServer implements MessageComponentInterface {
         }
         $this->logger->info('Liste des joueurs connectés diffusée.', [
             'source_connection_id' => $sourceConnectionId,
-            'player_count' => count($playersList),
+            'recipient_count' => $recipientCount,
+            'maximum_player_count' => $maximumPlayerCount,
         ]);
         $this->writeStatusSnapshot();
     }
@@ -2601,8 +2616,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
         'log_path' => $logFilePath,
     ]);
     try {
-        $component = new LoggedOriginCheck(new WsServer(new MinesweeperServer($logger)), $allowedOrigins, $logger);
+        $gameServer = new MinesweeperServer($logger);
+        $component = new LoggedOriginCheck(new WsServer($gameServer), $allowedOrigins, $logger);
         $server = IoServer::factory(new HttpServer($component), $port, $host);
+        $gameServer->startPeriodicSessionValidation($server->loop);
         $logger->info('Backend WebSocket prêt et en écoute.', ['host' => $host, 'port' => $port]);
         $server->run();
     } catch (Throwable $e) {
