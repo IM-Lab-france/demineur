@@ -1,4 +1,6 @@
 **vendor
+!assets/vendor/
+!assets/vendor/**
 **env
 **/__pycache__/
 *.py[cod]

@@ -69,9 +69,28 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npx playwright install --with-deps chromium
-      - run: php server.php > /tmp/minesweeper-e2e.log 2>&1 &
+      - name: Run end-to-end tests
+        run: |
+          php server.php > /tmp/minesweeper-e2e.log 2>&1 &
+          websocket_pid=$!
+          trap 'kill "$websocket_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in $(seq 1 30); do
+            if php -r '$socket=@fsockopen("127.0.0.1",8080,$errno,$error,0.2); if(!$socket) exit(1); fclose($socket);'; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != true ]]; then
+            cat /tmp/minesweeper-e2e.log
+            exit 1
+          fi
+          if ! npm run test:e2e; then
+            cat /tmp/minesweeper-e2e.log
+            exit 1
+          fi
         env:
           WS_HOST: 127.0.0.1
           WS_PORT: 8080
           WS_ALLOWED_ORIGINS: localhost,127.0.0.1
-      - run: npm run test:e2e
