@@ -2373,10 +2373,14 @@ class MinesweeperServer implements MessageComponentInterface {
     }
 
     protected function broadcastConnectedPlayersList(int $sourceConnectionId): void {
+        $recipientCount = 0;
+        $maximumPlayerCount = 0;
         foreach ($this->clients as $client) {
             if (!$this->isAuthenticated($client)) continue;
             $viewerId = (int) ($this->players[$client->resourceId]['id'] ?? 0);
             $playersList = $this->getConnectedPlayers($viewerId);
+            $recipientCount++;
+            $maximumPlayerCount = max($maximumPlayerCount, count($playersList));
             $client->send(json_encode([
                 'type' => 'connected_players',
                 'playerId' => $sourceConnectionId,
@@ -2386,7 +2390,8 @@ class MinesweeperServer implements MessageComponentInterface {
         }
         $this->logger->info('Liste des joueurs connectés diffusée.', [
             'source_connection_id' => $sourceConnectionId,
-            'player_count' => count($playersList),
+            'recipient_count' => $recipientCount,
+            'maximum_player_count' => $maximumPlayerCount,
         ]);
         $this->writeStatusSnapshot();
     }
