@@ -1,6 +1,7 @@
 [Unit]
 Description=Serveur WebSocket Minesweeper
 After=network-online.target mysql.service
+Wants=minesweeper-ai-restore.service
 
 [Service]
 Type=simple

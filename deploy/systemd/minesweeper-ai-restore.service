@@ -1,0 +1,10 @@
+[Unit]
+Description=Relance des IA actives après le serveur Démineur
+After=minesweeper-websocket.service
+PartOf=minesweeper-websocket.service
+
+[Service]
+Type=oneshot
+ExecStart=/var/www/demineur/scripts/restart-enabled-ai.sh
+RemainAfterExit=yes
+

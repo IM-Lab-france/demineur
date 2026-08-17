@@ -46,11 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $systemdUnit = 'minesweeper-ai@' . $iaName . '.service';
     $systemdTemplate = '/etc/systemd/system/minesweeper-ai@.service';
     if (is_file($systemdTemplate)) {
-        exec('/usr/bin/sudo -n /usr/bin/systemctl start ' . escapeshellarg($systemdUnit) . ' 2>&1', $output, $code);
+        // L'activation conserve l'intention de l'administrateur : cette IA doit
+        // revenir au prochain démarrage de la machine ou du WebSocket.
+        exec('/usr/bin/sudo -n /usr/bin/systemctl enable --now ' . escapeshellarg($systemdUnit) . ' 2>&1', $output, $code);
         usleep(500000);
         exec('/usr/bin/systemctl is-active ' . escapeshellarg($systemdUnit) . ' 2>/dev/null', $state, $stateCode);
         if ($code === 0 && $stateCode === 0 && trim(implode('', $state)) === 'active') {
-            echo json_encode(['success' => true, 'message' => 'IA démarrée dans son service isolé.']);
+            echo json_encode(['success' => true, 'message' => 'IA démarrée et configurée pour être relancée avec le serveur.']);
         } else {
             http_response_code(500);
             echo json_encode(['success' => false, 'message' => 'Le service isolé de l’IA n’a pas démarré.', 'log' => implode("\n", $output)]);
